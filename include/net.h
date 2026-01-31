@@ -5,14 +5,19 @@
 
 typedef struct {
     int fd;
-    SSL *ssl;
-    SSL_CTX *ctx;
+    SSL* ssl;
+    SSL_CTX* ctx;
 } tls_conn;
 
-tls_conn tls_connect(const char *host, const char *port);
-void tls_close(tls_conn *c);
+typedef struct {
+    const char* host;
+    const char* port;
+} net_endpoint;
 
-int https_request(const char *host, const char *port, const char *req,
-                  char *resp, size_t resp_cap, size_t *resp_len);
+tls_conn tls_connect(const net_endpoint* endpoint);
+void tls_close(tls_conn* c);
+
+int https_request(const net_endpoint* endpoint, const char* req, char* resp, size_t resp_cap,
+                  size_t* resp_len);
 
 #endif

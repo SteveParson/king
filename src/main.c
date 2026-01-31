@@ -7,9 +7,9 @@
 int main(void) {
     log_init_from_env();
 
-    const char *token = getenv("DISCORD_TOKEN");
-    const char *reply = getenv("DISCORD_REPLY");
-    const char *reaction = getenv("DISCORD_REACTION");
+    const char* token = getenv("DISCORD_TOKEN");
+    const char* reply = getenv("DISCORD_REPLY");
+    const char* reaction = getenv("DISCORD_REACTION");
 
     if (!token || token[0] == '\0') {
         fprintf(stderr, "DISCORD_TOKEN is required (raw token)\n");
@@ -24,5 +24,10 @@ int main(void) {
         reaction = "";
     }
 
-    return discord_run(token, reply, reaction);
+    discord_config config;
+    config.token = token;
+    config.reply = reply;
+    config.reaction = reaction;
+
+    return discord_run(&config);
 }

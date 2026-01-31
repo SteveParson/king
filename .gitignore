@@ -1,4 +1,29 @@
-/discord2
+# Autotools generated
+Makefile
+Makefile.in
+autom4te.cache/
+aclocal.m4
+config.h
+config.log
+config.status
+compile
+depcomp
+install-sh
+missing
+ltmain.sh
+configure~
+stamp-h1
+
+# Build artifacts
+src/discord2
+discord2
 *.o
-*.obj
+*.lo
+*.la
+*.a
 *.d
+*.deps/
+.libs/
+
+# Local outputs
+lint.txt

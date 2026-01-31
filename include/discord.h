@@ -3,6 +3,12 @@
 
 #include <stddef.h>
 
-int discord_run(const char *token, const char *reply, const char *reaction);
+typedef struct {
+    const char* token;
+    const char* reply;
+    const char* reaction;
+} discord_config;
+
+int discord_run(const discord_config* config);
 
 #endif

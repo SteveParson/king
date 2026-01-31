@@ -9,9 +9,27 @@ A minimal Discord bot in C that connects to the Gateway over TLS WebSockets and 
 - Sends a reply and adds a reaction when a message contains `king`
 - Simple log levels via `LOG_LEVEL`
 
-## Build
+## Build (Autotools)
 ```bash
-CCACHE_DISABLE=1 make CC=gcc
+./autogen.sh
+./configure
+make
+```
+
+Size-focused builds:
+```bash
+make small   # smaller binary
+make tiny    # smallest (strips info/debug logs + unwind tables)
+```
+
+Lint:
+```bash
+make lint
+```
+
+Format:
+```bash
+make format
 ```
 
 ## Run
@@ -22,7 +40,7 @@ export DISCORD_TOKEN='<your_token_here>'
 export DISCORD_REPLY='All hail' # set to empty string to disable replies
 export DISCORD_REACTION='<unicode_emoji>'
 export LOG_LEVEL=info
-./discord2
+./src/discord2
 ```
 
 Notes:
@@ -35,6 +53,7 @@ Notes:
 - `DISCORD_REPLY` (optional): default `"All hail"` (set to empty string to disable replies)
 - `DISCORD_REACTION` (optional): empty by default (set to a unicode emoji to react)
 - `LOG_LEVEL` (optional): `error`, `info` (default), or `debug`
+- `LOG_LEVEL_COMPILE` (compile-time): set by `make tiny` to remove info/debug log code
 
 ## Limitations
 - JSON parsing is minimal and only targets fields we need.
