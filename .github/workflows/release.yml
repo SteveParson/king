@@ -41,6 +41,9 @@ jobs:
           fi
           ./configure
 
+      - name: Test
+        run: make check
+
       - name: Build standard
         run: |
           make
