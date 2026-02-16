@@ -1,0 +1,12 @@
+# Override root .gitignore patterns that would exclude our files
+!Makefile
+
+# cosmocc toolchain (auto-downloaded)
+.cosmocc/
+
+# Build artifacts
+*.o
+king
+*.com.dbg
+*.aarch64.elf
+.aarch64/
