@@ -32,6 +32,11 @@ Format:
 make format
 ```
 
+Test:
+```bash
+make check
+```
+
 ## Run
 Set your bot token and (optionally) a reply message and reaction emoji:
 

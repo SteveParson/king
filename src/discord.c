@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #define GATEWAY_HOST "gateway.discord.gg"
 #define API_HOST "discord.com"
@@ -440,7 +441,18 @@ static int poll_and_read(gateway_state* state, char* buf, size_t buf_cap) {
 
     now = now_ms();
     if (state->next_heartbeat > 0 && now >= state->next_heartbeat) {
-        if (send_heartbeat(&state->conn.ioc, state->sequence) != 0) {
+        int hb_ok = 0;
+        int delay = 100000;
+        for (int retries = 0; retries < 3 && !hb_ok; retries++) {
+            if (send_heartbeat(&state->conn.ioc, state->sequence) == 0) {
+                hb_ok = 1;
+            } else if (retries < 2) {
+                log_error("Heartbeat failed, retrying...");
+                usleep(delay);
+                delay *= 2;
+            }
+        }
+        if (!hb_ok) {
             log_error("Heartbeat failed");
             return -1;
         }
