@@ -1,3 +1,4 @@
+/* Minimal client-side WebSocket framing for Discord Gateway. */
 #include "ws.h"
 
 #include <openssl/rand.h>
@@ -6,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Small base64 encoder used for the WebSocket handshake key. */
 static void base64_encode(const unsigned char* in, size_t in_len, unsigned char* out,
                           size_t out_cap) {
     static const char* b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -26,6 +28,7 @@ static void base64_encode(const unsigned char* in, size_t in_len, unsigned char*
     out[o] = '\0';
 }
 
+/* HTTP Upgrade to WebSocket; validates 101 response. */
 int ws_handshake(SSL* ssl, const char* host, const char* path) {
     unsigned char key_raw[16];
     if (RAND_bytes(key_raw, sizeof(key_raw)) != 1) {
@@ -65,6 +68,7 @@ int ws_handshake(SSL* ssl, const char* host, const char* path) {
     return 0;
 }
 
+/* Client-to-server text frame (masked as required by spec). */
 int ws_send_text(SSL* ssl, const char* text, size_t len) {
     unsigned char header[14];
     size_t hlen = 0;
@@ -116,6 +120,7 @@ int ws_send_text(SSL* ssl, const char* text, size_t len) {
     return 0;
 }
 
+/* Read exactly len bytes from TLS or fail. */
 static int read_exact(SSL* ssl, unsigned char* buf, size_t len) {
     size_t got = 0;
     while (got < len) {
@@ -191,6 +196,7 @@ static int validate_opcode(unsigned char opcode) {
     return 0;
 }
 
+/* Read a single text frame into out (no fragmentation handling). */
 int ws_read_text(SSL* ssl, char* out, size_t out_cap, size_t* out_len) {
     unsigned char hdr[2];
     if (read_exact(ssl, hdr, 2) != 0) {

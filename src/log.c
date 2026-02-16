@@ -1,3 +1,4 @@
+/* Lightweight logger with runtime level and optional compile-time stripping. */
 #include "log.h"
 
 #include <stdarg.h>
@@ -5,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Default to info-level logging unless overridden by LOG_LEVEL env. */
 static int g_log_level = LOG_LEVEL_INFO;
 
 void log_set_level(int level) {
@@ -22,6 +24,7 @@ int log_get_level(void) {
 }
 
 void log_init_from_env(void) {
+    /* Accepts: error | info | debug */
     const char* lvl = getenv("LOG_LEVEL");
     if (!lvl || !*lvl) {
         return;

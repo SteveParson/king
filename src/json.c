@@ -1,8 +1,10 @@
+/* Tiny, targeted JSON helpers: enough for Discord payloads we read. */
 #include "json.h"
 
 #include <ctype.h>
 #include <string.h>
 
+/* Skip ASCII whitespace. */
 static const char* skip_ws(const char* ptr) {
     while (ptr && *ptr && isspace((unsigned char)*ptr)) {
         ptr++;
@@ -57,6 +59,7 @@ static size_t handle_escape(const char** cursor, char* out, size_t out_cap, size
     return out_len;
 }
 
+/* Read a JSON string value into out; minimal escape handling. */
 static int read_string_value(const char* cursor, char* out, size_t out_cap) {
     if (!cursor || *cursor != '"') {
         return 0;
@@ -81,6 +84,7 @@ static int read_string_value(const char* cursor, char* out, size_t out_cap) {
     return 1;
 }
 
+/* Locate a top-level key occurrence and return the start of its value. */
 const char* json_find_key(const char* json, const char* key) {
     if (!json || !key) {
         return NULL;
@@ -131,6 +135,7 @@ int json_get_int(const char* json, const char* key, long long* out) {
     return 1;
 }
 
+/* Find the byte range for a JSON object value. */
 static int find_object_range(const char* json, const char* object_key, json_range* range) {
     const char* ptr = json_find_key(json, object_key);
     if (!ptr || *ptr != '{') {
@@ -202,6 +207,7 @@ static void update_depth(char ch, int* depth) {
     }
 }
 
+/* Scan the object range for a member key at depth 1. */
 static int scan_top_level_key(const char* start, const char* end, const char* key,
                               const char** out_value) {
     size_t klen = strlen(key);

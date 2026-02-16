@@ -1,3 +1,4 @@
+/* TLS + HTTPS helpers used by REST and gateway connections. */
 #include "net.h"
 
 #include <netdb.h>
@@ -6,6 +7,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+/* Resolve and connect to a host:port, returning a connected socket or -1. */
 static int tcp_connect(const char* host, const char* port) {
     struct addrinfo hints;
     struct addrinfo* res = NULL;
@@ -36,6 +38,7 @@ static int tcp_connect(const char* host, const char* port) {
     return fd;
 }
 
+/* Establish a TLS connection for an endpoint. */
 tls_conn tls_connect(const net_endpoint* endpoint) {
     tls_conn c;
     c.fd = -1;
@@ -90,6 +93,7 @@ void tls_close(tls_conn* c) {
     c->fd = -1;
 }
 
+/* Minimal HTTPS request: send raw request and read the full response. */
 int https_request(const net_endpoint* endpoint, const char* req, char* resp, size_t resp_cap,
                   size_t* resp_len) {
     tls_conn c = tls_connect(endpoint);

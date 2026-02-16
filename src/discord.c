@@ -1,3 +1,4 @@
+/* Discord Gateway + REST orchestration and message handling. */
 #include "discord.h"
 #include "json.h"
 #include "log.h"
@@ -17,6 +18,7 @@
 #define GATEWAY_PATH "/?v=10&encoding=json"
 #define BUF_SIZE 65536
 
+/* Runtime context built from config and token normalization. */
 typedef struct {
     const char* auth_token;
     const char* gateway_token;
@@ -24,6 +26,7 @@ typedef struct {
     const char* reaction;
 } discord_context;
 
+/* Gateway connection state (heartbeat, sequence tracking). */
 typedef struct {
     tls_conn conn;
     long long heartbeat_interval;
@@ -31,12 +34,14 @@ typedef struct {
     long long next_heartbeat;
 } gateway_state;
 
+/* Parameters for REST message creation. */
 typedef struct {
     const char* auth_token;
     const char* channel_id;
     const char* content;
 } message_request;
 
+/* Parameters for REST reaction creation. */
 typedef struct {
     const char* auth_token;
     const char* channel_id;
@@ -49,6 +54,7 @@ typedef struct {
     const char* event;
 } dispatch_event;
 
+/* Monotonic milliseconds for heartbeat timing. */
 static long long now_ms(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -59,8 +65,7 @@ static unsigned char lower_ascii(unsigned char ch) {
     return (unsigned char)tolower(ch);
 }
 
-static int match_at_case(const char* hay, size_t start_idx, const char* needle,
-                         size_t needle_len) {
+static int match_at_case(const char* hay, size_t start_idx, const char* needle, size_t needle_len) {
     for (size_t offset = 0; offset < needle_len; offset++) {
         unsigned char hc = (unsigned char)hay[start_idx + offset];
         if (lower_ascii(hc) != lower_ascii((unsigned char)needle[offset])) {
@@ -70,6 +75,7 @@ static int match_at_case(const char* hay, size_t start_idx, const char* needle,
     return 1;
 }
 
+/* Case-insensitive substring check for the trigger word. */
 static int contains_case(const char* hay, const char* needle) {
     if (!hay || !needle || !*needle) {
         return 0;
@@ -87,6 +93,7 @@ static int contains_case(const char* hay, const char* needle) {
     return 0;
 }
 
+/* Escape a string for JSON payloads (ASCII control handling only). */
 static void json_escape(const char* input, char* out, size_t out_cap) {
     size_t out_len = 0;
     for (size_t idx = 0; input[idx] && out_len + 2 < out_cap; idx++) {
@@ -119,14 +126,14 @@ static void json_escape(const char* input, char* out, size_t out_cap) {
     out[out_len] = '\0';
 }
 
+/* Percent-encode a string for the reactions endpoint. */
 static void url_encode(const char* input, char* out, size_t out_cap) {
     static const char* hex = "0123456789ABCDEF";
     size_t out_len = 0;
     for (size_t idx = 0; input[idx] && out_len + 4 < out_cap; idx++) {
         unsigned char ch = (unsigned char)input[idx];
-        if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
-            (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' || ch == '.' ||
-            ch == '~') {
+        if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') ||
+            ch == '-' || ch == '_' || ch == '.' || ch == '~') {
             out[out_len++] = (char)ch;
         } else {
             if (out_len + 3 >= out_cap) {
@@ -140,6 +147,7 @@ static void url_encode(const char* input, char* out, size_t out_cap) {
     out[out_len] = '\0';
 }
 
+/* Thin HTTPS wrapper used by REST helpers. */
 static int https_api_request(const char* auth_token, const char* method, const char* path,
                              const char* body, char* resp, size_t resp_cap) {
     static const net_endpoint api_endpoint = {API_HOST, API_PORT};
@@ -190,6 +198,7 @@ static int http_status_code(const char* resp) {
     return code;
 }
 
+/* POST a message to the given channel. */
 static int send_message(const message_request* req) {
     char esc[2048];
     char body[4096];
@@ -209,6 +218,7 @@ static int send_message(const message_request* req) {
     return 0;
 }
 
+/* PUT a reaction on an existing message. */
 static int send_reaction(const reaction_request* req) {
     if (!req->emoji || req->emoji[0] == '\0') {
         return 0;
@@ -218,8 +228,7 @@ static int send_reaction(const reaction_request* req) {
     char resp[4096];
 
     url_encode(req->emoji, emoji_enc, sizeof(emoji_enc));
-    snprintf(path, sizeof(path),
-             "/api/v10/channels/%s/messages/%s/reactions/%s/@me",
+    snprintf(path, sizeof(path), "/api/v10/channels/%s/messages/%s/reactions/%s/@me",
              req->channel_id, req->message_id, emoji_enc);
 
     if (https_api_request(req->auth_token, "PUT", path, "", resp, sizeof(resp)) != 0) {
@@ -230,6 +239,7 @@ static int send_reaction(const reaction_request* req) {
     return 0;
 }
 
+/* Identify on the gateway with intents and client properties. */
 static int send_identify(SSL* ssl, const char* gateway_token) {
     char payload[1024];
     const int intents = 33280; /* GUILD_MESSAGES + MESSAGE_CONTENT */
@@ -249,6 +259,7 @@ static int send_identify(SSL* ssl, const char* gateway_token) {
     return ws_send_text(ssl, payload, (size_t)n);
 }
 
+/* Heartbeat payload (op=1) with last sequence. */
 static int send_heartbeat(SSL* ssl, long long seq) {
     char payload[64];
     int n;
@@ -263,8 +274,9 @@ static int send_heartbeat(SSL* ssl, long long seq) {
     return ws_send_text(ssl, payload, (size_t)n);
 }
 
-static int build_tokens(const discord_config* config, discord_context* ctx,
-                        char* auth_token, size_t auth_cap) {
+/* Normalize the token for REST vs Gateway usage. */
+static int build_tokens(const discord_config* config, discord_context* ctx, char* auth_token,
+                        size_t auth_cap) {
     if (!config || !config->token) {
         return -1;
     }
@@ -282,6 +294,7 @@ static int build_tokens(const discord_config* config, discord_context* ctx,
     return 0;
 }
 
+/* Process HELLO (op=10): read interval and send IDENTIFY. */
 static int handle_hello(gateway_state* state, const discord_context* ctx, const char* payload) {
     long long interval = 0;
     json_object_key hb_key = {"d", "heartbeat_interval"};
@@ -297,6 +310,7 @@ static int handle_hello(gateway_state* state, const discord_context* ctx, const 
     return 0;
 }
 
+/* Handle MESSAGE_CREATE by matching content and issuing REST calls. */
 static int handle_message_create(const discord_context* ctx, const char* payload) {
     if (strstr(payload, "\"bot\":true") != NULL) {
         return 0;
@@ -332,6 +346,7 @@ static int handle_message_create(const discord_context* ctx, const char* payload
     return 0;
 }
 
+/* Handle dispatch events by name (READY, MESSAGE_CREATE, ...). */
 static int handle_dispatch_event(const discord_context* ctx, const dispatch_event* evt) {
     if (strcmp(evt->event, "MESSAGE_CREATE") == 0) {
         return handle_message_create(ctx, evt->payload);
@@ -342,6 +357,7 @@ static int handle_dispatch_event(const discord_context* ctx, const dispatch_even
     return 0;
 }
 
+/* Handle non-dispatch gateway opcodes (ACK/RECONNECT). */
 static int handle_gateway_op(gateway_state* state, const char* payload) {
     long long op = -1;
     if (!json_get_int(payload, "op", &op)) {
@@ -358,6 +374,7 @@ static int handle_gateway_op(gateway_state* state, const char* payload) {
     return 0;
 }
 
+/* Update last seen sequence for heartbeats. */
 static void update_sequence(gateway_state* state, const char* payload) {
     long long seq_in = -1;
     if (json_get_int(payload, "s", &seq_in)) {
@@ -365,8 +382,7 @@ static void update_sequence(gateway_state* state, const char* payload) {
     }
 }
 
-static int handle_dispatch(gateway_state* state, const discord_context* ctx,
-                           const char* payload) {
+static int handle_dispatch(gateway_state* state, const discord_context* ctx, const char* payload) {
     char event[64];
     if (!json_get_string(payload, "t", event, sizeof(event))) {
         return 0;
@@ -375,6 +391,7 @@ static int handle_dispatch(gateway_state* state, const discord_context* ctx,
     return handle_dispatch_event(ctx, &evt);
 }
 
+/* Wait for HELLO before entering the main loop. */
 static int wait_for_hello(gateway_state* state, const discord_context* ctx, char* buf,
                           size_t buf_cap) {
     size_t len = 0;
@@ -390,6 +407,7 @@ static int wait_for_hello(gateway_state* state, const discord_context* ctx, char
     return -1;
 }
 
+/* Poll socket, send heartbeats, and read the next gateway frame. */
 static int poll_and_read(gateway_state* state, char* buf, size_t buf_cap) {
     struct pollfd pfd;
     pfd.fd = state->conn.fd;
@@ -433,6 +451,7 @@ static int poll_and_read(gateway_state* state, char* buf, size_t buf_cap) {
     return 0;
 }
 
+/* Main gateway loop: connect, identify, read events, and react. */
 int discord_run(const discord_config* config) {
     char auth_token[512];
     discord_context ctx;
