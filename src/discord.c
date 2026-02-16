@@ -220,7 +220,11 @@ static int send_message(const message_request* req) {
         log_error("Failed to send message");
         return -1;
     }
-    log_info("Message send status %d", http_status_code(resp));
+    int status = http_status_code(resp);
+    log_info("Message send status %d", status);
+    if (status >= 400) {
+        log_error("Message send failed: %.*s", 200, resp);
+    }
     return 0;
 }
 
