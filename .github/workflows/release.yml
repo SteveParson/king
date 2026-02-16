@@ -66,8 +66,31 @@ jobs:
           name: binaries-${{ matrix.name }}
           path: discord2-${{ matrix.name }}*
 
+  cosmo:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Cache cosmocc
+        uses: actions/cache@v4
+        with:
+          path: cosmo/.cosmocc
+          key: cosmocc-3.9.2
+
+      - name: Build APE
+        run: make -C cosmo
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-cosmo-ape
+          path: cosmo/king
+
   release:
-    needs: build
+    needs: [build, cosmo]
     runs-on: ubuntu-latest
 
     steps:
@@ -79,6 +102,9 @@ jobs:
           path: artifacts
           pattern: binaries-*
           merge-multiple: true
+
+      - name: Rename cosmo binary
+        run: mv artifacts/king artifacts/discord2-cosmo-ape
 
       - name: Generate checksums
         run: |
@@ -115,6 +141,7 @@ jobs:
           | \`discord2-macos-arm64\` | macOS Apple Silicon — standard build |
           | \`discord2-macos-arm64-small\` | macOS Apple Silicon — size-optimized (-Os) |
           | \`discord2-macos-arm64-tiny\` | macOS Apple Silicon — smallest (logs stripped) |
+          | \`discord2-cosmo-ape\` | Cosmopolitan APE — runs on Linux/macOS/Windows/BSD |
           | Docker | \`${IMAGE_NAME}:${{ steps.tag.outputs.tag }}\` |" \
             artifacts/discord2-* artifacts/checksums-sha256.txt
 
