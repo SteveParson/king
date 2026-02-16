@@ -3,25 +3,25 @@ SUBDIRS = include src
 small:
 	$(MAKE) -C src \
 		CFLAGS="$(CFLAGS) -Os -ffunction-sections -fdata-sections" \
-		LDFLAGS="$(LDFLAGS) -Wl,--gc-sections -s"
+		LDFLAGS="$(LDFLAGS) @DEAD_STRIP_LDFLAGS@"
 
 tiny:
 	$(MAKE) -C src \
 		CFLAGS="$(CFLAGS) -Os -ffunction-sections -fdata-sections -flto \
 		-fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector" \
 		CPPFLAGS="$(CPPFLAGS) -DLOG_LEVEL_COMPILE=0" \
-		LDFLAGS="$(LDFLAGS) -Wl,--gc-sections -s"
+		LDFLAGS="$(LDFLAGS) @DEAD_STRIP_LDFLAGS@"
 
 sizes:
 	@$(MAKE) -C src clean
 	@$(MAKE) -C src
-	@echo "normal size: $$(stat -c%s src/discord2) bytes"
+	@echo "normal size: $$(wc -c < src/discord2 | tr -d ' ') bytes"
 	@$(MAKE) -C src clean
 	@$(MAKE) -C src CFLAGS="$(CFLAGS) -Os -ffunction-sections -fdata-sections -flto \
 	-fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector" \
 	CPPFLAGS="$(CPPFLAGS) -DLOG_LEVEL_COMPILE=0" \
-	LDFLAGS="$(LDFLAGS) -Wl,--gc-sections -s"
-	@echo "tiny size: $$(stat -c%s src/discord2) bytes"
+	LDFLAGS="$(LDFLAGS) @DEAD_STRIP_LDFLAGS@"
+	@echo "tiny size: $$(wc -c < src/discord2 | tr -d ' ') bytes"
 
 EXTRA_DIST = autogen.sh
 

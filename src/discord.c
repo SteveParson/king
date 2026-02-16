@@ -75,7 +75,7 @@ static int match_at_case(const char* hay, size_t start_idx, const char* needle, 
     return 1;
 }
 
-/* Case-insensitive substring check for the trigger word. */
+/* Case-insensitive whole-word check for the trigger word. */
 static int contains_case(const char* hay, const char* needle) {
     if (!hay || !needle || !*needle) {
         return 0;
@@ -87,7 +87,12 @@ static int contains_case(const char* hay, const char* needle) {
     }
     for (size_t idx = 0; idx + needle_len <= hay_len; idx++) {
         if (match_at_case(hay, idx, needle, needle_len)) {
-            return 1;
+            int before_ok = (idx == 0) || !isalnum((unsigned char)hay[idx - 1]);
+            int after_ok =
+                (idx + needle_len == hay_len) || !isalnum((unsigned char)hay[idx + needle_len]);
+            if (before_ok && after_ok) {
+                return 1;
+            }
         }
     }
     return 0;
@@ -248,7 +253,11 @@ static int send_identify(SSL* ssl, const char* gateway_token) {
                      "\"token\":\"%s\","
                      "\"intents\":%d,"
                      "\"properties\":{"
+#ifdef __APPLE__
+                     "\"os\":\"darwin\","
+#else
                      "\"os\":\"linux\","
+#endif
                      "\"browser\":\"discord2\","
                      "\"device\":\"discord2\""
                      "}}}",
