@@ -245,7 +245,7 @@ static int send_reaction(const reaction_request* req) {
 }
 
 /* Identify on the gateway with intents and client properties. */
-static int send_identify(SSL* ssl, const char* gateway_token) {
+static int send_identify(br_sslio_context* ioc, const char* gateway_token) {
     char payload[1024];
     const int intents = 33280; /* GUILD_MESSAGES + MESSAGE_CONTENT */
     int n = snprintf(payload, sizeof(payload),
@@ -265,11 +265,11 @@ static int send_identify(SSL* ssl, const char* gateway_token) {
     if (n <= 0 || (size_t)n >= sizeof(payload)) {
         return -1;
     }
-    return ws_send_text(ssl, payload, (size_t)n);
+    return ws_send_text(ioc, payload, (size_t)n);
 }
 
 /* Heartbeat payload (op=1) with last sequence. */
-static int send_heartbeat(SSL* ssl, long long seq) {
+static int send_heartbeat(br_sslio_context* ioc, long long seq) {
     char payload[64];
     int n;
     if (seq >= 0) {
@@ -280,7 +280,7 @@ static int send_heartbeat(SSL* ssl, long long seq) {
     if (n <= 0 || (size_t)n >= sizeof(payload)) {
         return -1;
     }
-    return ws_send_text(ssl, payload, (size_t)n);
+    return ws_send_text(ioc, payload, (size_t)n);
 }
 
 /* Normalize the token for REST vs Gateway usage. */
@@ -310,7 +310,7 @@ static int handle_hello(gateway_state* state, const discord_context* ctx, const 
     if (json_get_int_in_object(payload, &hb_key, &interval)) {
         state->heartbeat_interval = interval;
     }
-    if (send_identify(state->conn.ssl, ctx->gateway_token) != 0) {
+    if (send_identify(&state->conn.ioc, ctx->gateway_token) != 0) {
         log_error("Identify failed");
         return -1;
     }
@@ -404,7 +404,7 @@ static int handle_dispatch(gateway_state* state, const discord_context* ctx, con
 static int wait_for_hello(gateway_state* state, const discord_context* ctx, char* buf,
                           size_t buf_cap) {
     size_t len = 0;
-    while (ws_read_text(state->conn.ssl, buf, buf_cap, &len) == 0) {
+    while (ws_read_text(&state->conn.ioc, buf, buf_cap, &len) == 0) {
         long long op = -1;
         if (!json_get_int(buf, "op", &op)) {
             continue;
@@ -440,7 +440,7 @@ static int poll_and_read(gateway_state* state, char* buf, size_t buf_cap) {
 
     now = now_ms();
     if (state->next_heartbeat > 0 && now >= state->next_heartbeat) {
-        if (send_heartbeat(state->conn.ssl, state->sequence) != 0) {
+        if (send_heartbeat(&state->conn.ioc, state->sequence) != 0) {
             log_error("Heartbeat failed");
             return -1;
         }
@@ -453,7 +453,7 @@ static int poll_and_read(gateway_state* state, char* buf, size_t buf_cap) {
     }
 
     size_t len = 0;
-    if (ws_read_text(state->conn.ssl, buf, buf_cap, &len) != 0) {
+    if (ws_read_text(&state->conn.ioc, buf, buf_cap, &len) != 0) {
         log_error("Gateway read failed");
         return -1;
     }
@@ -475,13 +475,13 @@ int discord_run(const discord_config* config) {
 
     net_endpoint gateway_endpoint = {GATEWAY_HOST, API_PORT};
     state.conn = tls_connect(&gateway_endpoint);
-    if (!state.conn.ssl) {
+    if (state.conn.fd < 0) {
         log_error("Gateway TLS connect failed");
         return 1;
     }
     log_info("Connected to gateway TLS");
 
-    if (ws_handshake(state.conn.ssl, GATEWAY_HOST, GATEWAY_PATH) != 0) {
+    if (ws_handshake(&state.conn.ioc, GATEWAY_HOST, GATEWAY_PATH) != 0) {
         log_error("WebSocket handshake failed");
         tls_close(&state.conn);
         return 1;

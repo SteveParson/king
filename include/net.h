@@ -1,12 +1,15 @@
 #ifndef NET_H
 #define NET_H
 
-#include <openssl/ssl.h>
+#include <bearssl.h>
+#include <stddef.h>
 
 typedef struct {
     int fd;
-    SSL* ssl;
-    SSL_CTX* ctx;
+    br_ssl_client_context sc;
+    br_x509_minimal_context xc;
+    br_sslio_context ioc;
+    unsigned char iobuf[BR_SSL_BUFSIZE_BIDI];
 } tls_conn;
 
 typedef struct {
