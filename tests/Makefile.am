@@ -1,6 +1,6 @@
 # check_PROGRAMS are built (and TESTS are run) only when you run `make check`.
 
-AM_CPPFLAGS = -I$(top_srcdir)/include @OPENSSL_CFLAGS@
+AM_CPPFLAGS = -I$(top_srcdir)/include -I$(top_srcdir)/vendor/bearssl/inc
 
 check_PROGRAMS = test_json test_discord
 
@@ -17,6 +17,6 @@ test_discord_SOURCES = test_discord.c  \
     $(top_srcdir)/src/ws.c             \
     $(top_srcdir)/src/net.c            \
     $(top_srcdir)/src/log.c
-test_discord_LDADD = @OPENSSL_LIBS@
+test_discord_LDADD = $(top_builddir)/vendor/libbearssl.a
 
 TESTS = test_json test_discord

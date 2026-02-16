@@ -7,6 +7,60 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+/*
+ * Trust anchor: GTS Root R4 (Google Trust Services).
+ * Discord's certificate chain terminates at this CA.
+ * Subject: C=US, O=Google Trust Services LLC, CN=GTS Root R4
+ * Key: EC P-384 (secp384r1)
+ */
+static const unsigned char TA_DN[] = {
+    0x30, 0x47, 0x31, 0x0b, 0x30, 0x09, 0x06, 0x03, 0x55, 0x04, 0x06, 0x13,
+    0x02, 0x55, 0x53, 0x31, 0x22, 0x30, 0x20, 0x06, 0x03, 0x55, 0x04, 0x0a,
+    0x13, 0x19, 0x47, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x20, 0x54, 0x72, 0x75,
+    0x73, 0x74, 0x20, 0x53, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x73, 0x20,
+    0x4c, 0x4c, 0x43, 0x31, 0x14, 0x30, 0x12, 0x06, 0x03, 0x55, 0x04, 0x03,
+    0x13, 0x0b, 0x47, 0x54, 0x53, 0x20, 0x52, 0x6f, 0x6f, 0x74, 0x20, 0x52,
+    0x34};
+
+static const unsigned char TA_EC_Q[] = {
+    0x04, 0xf3, 0x74, 0x73, 0xa7, 0x68, 0x8b, 0x60, 0xae, 0x43, 0xb8, 0x35,
+    0xc5, 0x81, 0x30, 0x7b, 0x4b, 0x49, 0x9d, 0xfb, 0xc1, 0x61, 0xce, 0xe6,
+    0xde, 0x46, 0xbd, 0x6b, 0xd5, 0x61, 0x18, 0x35, 0xae, 0x40, 0xdd, 0x73,
+    0xf7, 0x89, 0x91, 0x30, 0x5a, 0xeb, 0x3c, 0xee, 0x85, 0x7c, 0xa2, 0x40,
+    0x76, 0x3b, 0xa9, 0xc6, 0xb8, 0x47, 0xd8, 0x2a, 0xe7, 0x92, 0x91, 0x6a,
+    0x73, 0xe9, 0xb1, 0x72, 0x39, 0x9f, 0x29, 0x9f, 0xa2, 0x98, 0xd3, 0x5f,
+    0x5e, 0x58, 0x86, 0x65, 0x0f, 0xa1, 0x84, 0x65, 0x06, 0xd1, 0xdc, 0x8b,
+    0xc9, 0xc7, 0x73, 0xc8, 0x8c, 0x6a, 0x2f, 0xe5, 0xc4, 0xab, 0xd1, 0x1d,
+    0x8a};
+
+static const br_x509_trust_anchor TAS[] = {{
+    {(unsigned char *)TA_DN, sizeof TA_DN},
+    BR_X509_TA_CA,
+    {BR_KEYTYPE_EC,
+     {.ec = {BR_EC_secp384r1, (unsigned char *)TA_EC_Q, sizeof TA_EC_Q}}},
+}};
+
+#define TAS_NUM 1
+
+/* Low-level I/O callbacks for BearSSL's simplified I/O wrapper. */
+static int sock_read(void* ctx, unsigned char* buf, size_t len) {
+    int fd = *(int*)ctx;
+    ssize_t rlen = read(fd, buf, len);
+    if (rlen <= 0) {
+        return -1;
+    }
+    return (int)rlen;
+}
+
+static int sock_write(void* ctx, const unsigned char* buf, size_t len) {
+    int fd = *(int*)ctx;
+    ssize_t wlen = write(fd, buf, len);
+    if (wlen <= 0) {
+        return -1;
+    }
+    return (int)wlen;
+}
+
 /* Resolve and connect to a host:port, returning a connected socket or -1. */
 static int tcp_connect(const char* host, const char* port) {
     struct addrinfo hints;
@@ -42,34 +96,25 @@ static int tcp_connect(const char* host, const char* port) {
 tls_conn tls_connect(const net_endpoint* endpoint) {
     tls_conn c;
     c.fd = -1;
-    c.ssl = NULL;
-    c.ctx = NULL;
-
-    SSL_library_init();
-    SSL_load_error_strings();
-
-    c.ctx = SSL_CTX_new(TLS_client_method());
-    if (!c.ctx) {
-        return c;
-    }
+    memset(&c.sc, 0, sizeof(c.sc));
+    memset(&c.xc, 0, sizeof(c.xc));
 
     c.fd = tcp_connect(endpoint->host, endpoint->port);
     if (c.fd < 0) {
         return c;
     }
 
-    c.ssl = SSL_new(c.ctx);
-    if (!c.ssl) {
+    br_ssl_client_init_full(&c.sc, &c.xc, TAS, TAS_NUM);
+    br_ssl_engine_set_buffer(&c.sc.eng, c.iobuf, sizeof(c.iobuf), 1);
+
+    if (br_ssl_client_reset(&c.sc, endpoint->host, 0) == 0) {
+        fprintf(stderr, "TLS reset failed\n");
+        close(c.fd);
+        c.fd = -1;
         return c;
     }
 
-    SSL_set_tlsext_host_name(c.ssl, endpoint->host);
-    SSL_set_fd(c.ssl, c.fd);
-
-    if (SSL_connect(c.ssl) <= 0) {
-        fprintf(stderr, "TLS connect failed\n");
-        return c;
-    }
+    br_sslio_init(&c.ioc, &c.sc.eng, sock_read, &c.fd, sock_write, &c.fd);
 
     return c;
 }
@@ -78,18 +123,10 @@ void tls_close(tls_conn* c) {
     if (!c) {
         return;
     }
-    if (c->ssl) {
-        SSL_shutdown(c->ssl);
-        SSL_free(c->ssl);
-    }
     if (c->fd >= 0) {
+        br_sslio_close(&c->ioc);
         close(c->fd);
     }
-    if (c->ctx) {
-        SSL_CTX_free(c->ctx);
-    }
-    c->ssl = NULL;
-    c->ctx = NULL;
     c->fd = -1;
 }
 
@@ -97,27 +134,20 @@ void tls_close(tls_conn* c) {
 int https_request(const net_endpoint* endpoint, const char* req, char* resp, size_t resp_cap,
                   size_t* resp_len) {
     tls_conn c = tls_connect(endpoint);
-    if (!c.ssl) {
+    if (c.fd < 0) {
         return -1;
     }
 
     size_t req_len = strlen(req);
-    size_t sent = 0;
-    while (sent < req_len) {
-        int n = SSL_write(c.ssl, req + sent, (int)(req_len - sent));
-        if (n <= 0) {
-            tls_close(&c);
-            return -1;
-        }
-        sent += (size_t)n;
+    if (br_sslio_write_all(&c.ioc, req, req_len) != 0) {
+        tls_close(&c);
+        return -1;
     }
+    br_sslio_flush(&c.ioc);
 
     size_t total = 0;
-    while (1) {
-        if (total + 1 >= resp_cap) {
-            break;
-        }
-        int n = SSL_read(c.ssl, resp + total, (int)(resp_cap - total - 1));
+    while (total + 1 < resp_cap) {
+        int n = br_sslio_read(&c.ioc, resp + total, resp_cap - total - 1);
         if (n <= 0) {
             break;
         }

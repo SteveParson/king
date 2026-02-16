@@ -1,0 +1,3 @@
+[submodule "vendor/bearssl"]
+	path = vendor/bearssl
+	url = https://github.com/status-im/BearSSL
