@@ -15,10 +15,14 @@ missing
 ltmain.sh
 configure~
 stamp-h1
+test-driver
+.dirstamp
 
 # Build artifacts
 src/discord2
 discord2
+tests/test_json
+tests/test_discord
 *.o
 *.lo
 *.la
@@ -26,6 +30,10 @@ discord2
 *.d
 *.deps/
 .libs/
+
+# Test output
+*.log
+*.trs
 
 # Local outputs
 lint.txt

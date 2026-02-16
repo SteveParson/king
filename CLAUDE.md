@@ -18,6 +18,14 @@ make tiny     # smallest: also strips unwind tables and compile-time removes inf
 
 The binary is placed at `src/discord2`.
 
+## Test
+
+```bash
+make check    # builds and runs tests/test_json and tests/test_discord
+```
+
+Tests cover the pure string utilities (`contains_case`, `json_escape`, `url_encode`, `http_status_code`) and the JSON parser. No network access required.
+
 ## Lint and Format
 
 ```bash

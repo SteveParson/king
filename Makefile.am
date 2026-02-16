@@ -1,4 +1,4 @@
-SUBDIRS = include src
+SUBDIRS = include src tests
 
 small:
 	$(MAKE) -C src \
@@ -27,7 +27,7 @@ EXTRA_DIST = autogen.sh
 
 lint:
 	@command -v clang-tidy >/dev/null 2>&1 || { echo "clang-tidy not found"; exit 1; }
-	@clang-tidy -p . $(top_srcdir)/src/*.c -- -I$(top_srcdir)/include $(CPPFLAGS) $(CFLAGS)
+	@clang-tidy -p . $(top_srcdir)/src/*.c -- -I$(top_srcdir)/include @OPENSSL_CFLAGS@ $(CPPFLAGS) $(CFLAGS)
 
 format:
 	@command -v clang-format >/dev/null 2>&1 || { echo "clang-format not found"; exit 1; }

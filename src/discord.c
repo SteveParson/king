@@ -76,7 +76,7 @@ static int match_at_case(const char* hay, size_t start_idx, const char* needle, 
 }
 
 /* Case-insensitive whole-word check for the trigger word. */
-static int contains_case(const char* hay, const char* needle) {
+int contains_case(const char* hay, const char* needle) {
     if (!hay || !needle || !*needle) {
         return 0;
     }
@@ -99,7 +99,7 @@ static int contains_case(const char* hay, const char* needle) {
 }
 
 /* Escape a string for JSON payloads (ASCII control handling only). */
-static void json_escape(const char* input, char* out, size_t out_cap) {
+void json_escape(const char* input, char* out, size_t out_cap) {
     size_t out_len = 0;
     for (size_t idx = 0; input[idx] && out_len + 2 < out_cap; idx++) {
         unsigned char ch = (unsigned char)input[idx];
@@ -132,7 +132,7 @@ static void json_escape(const char* input, char* out, size_t out_cap) {
 }
 
 /* Percent-encode a string for the reactions endpoint. */
-static void url_encode(const char* input, char* out, size_t out_cap) {
+void url_encode(const char* input, char* out, size_t out_cap) {
     static const char* hex = "0123456789ABCDEF";
     size_t out_len = 0;
     for (size_t idx = 0; input[idx] && out_len + 4 < out_cap; idx++) {
@@ -179,7 +179,7 @@ static int https_api_request(const char* auth_token, const char* method, const c
     return 0;
 }
 
-static int http_status_code(const char* resp) {
+int http_status_code(const char* resp) {
     if (!resp) {
         return -1;
     }
