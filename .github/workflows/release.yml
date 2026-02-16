@@ -24,21 +24,20 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libssl-dev autoconf automake
+        run: sudo apt-get update && sudo apt-get install -y autoconf automake
 
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
-        run: brew install openssl automake autoconf
+        run: brew install automake autoconf
 
       - name: Configure
         run: |
           ./autogen.sh
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            export PKG_CONFIG_PATH="$(brew --prefix openssl)/lib/pkgconfig:$PKG_CONFIG_PATH"
-          fi
           ./configure
 
       - name: Test
@@ -123,6 +122,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Compute tag and image name
         id: meta

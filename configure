@@ -4650,7 +4650,7 @@ case "$host_os" in
 esac
 
 
-ac_config_files="$ac_config_files Makefile vendor/bearssl/Makefile src/Makefile include/Makefile tests/Makefile"
+ac_config_files="$ac_config_files Makefile vendor/Makefile src/Makefile include/Makefile tests/Makefile"
 
 cat >confcache <<\_ACEOF
 # This file is a shell script that caches the results of configure
@@ -5390,7 +5390,7 @@ do
     "config.h") CONFIG_HEADERS="$CONFIG_HEADERS config.h" ;;
     "depfiles") CONFIG_COMMANDS="$CONFIG_COMMANDS depfiles" ;;
     "Makefile") CONFIG_FILES="$CONFIG_FILES Makefile" ;;
-    "vendor/bearssl/Makefile") CONFIG_FILES="$CONFIG_FILES vendor/bearssl/Makefile" ;;
+    "vendor/Makefile") CONFIG_FILES="$CONFIG_FILES vendor/Makefile" ;;
     "src/Makefile") CONFIG_FILES="$CONFIG_FILES src/Makefile" ;;
     "include/Makefile") CONFIG_FILES="$CONFIG_FILES include/Makefile" ;;
     "tests/Makefile") CONFIG_FILES="$CONFIG_FILES tests/Makefile" ;;
