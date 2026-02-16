@@ -120,12 +120,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Compute tag
-        id: tag
+      - name: Compute tag and image name
+        id: meta
         run: |
           COMMIT_DATE=$(git log -1 --format=%cd --date=format:%Y.%m.%d)
           SHORT_SHA=$(git rev-parse --short=7 HEAD)
           echo "tag=v${COMMIT_DATE}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -140,5 +141,5 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ steps.tag.outputs.tag }}
+            ${{ steps.meta.outputs.image }}:latest
+            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}
