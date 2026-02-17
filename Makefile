@@ -3,6 +3,7 @@
 #
 # Usage:
 #   make          — builds the 'king' APE binary (auto-downloads cosmocc)
+#   make test     — builds and runs tests
 #   make clean    — removes build artifacts
 #   make distclean — also removes downloaded cosmocc toolchain
 
@@ -22,7 +23,7 @@ CFLAGS  = -Os -Wall -Wextra -Wno-unused-parameter
 LDFLAGS =
 
 # ── mbedtls (git submodule at vendor/mbedtls) ───────────────────
-MBEDTLS_SRC = ../vendor/mbedtls
+MBEDTLS_SRC = vendor/mbedtls
 MBEDTLS_INC = $(MBEDTLS_SRC)/include
 MBEDTLS_LIB = $(MBEDTLS_SRC)/library
 MBEDTLS_LIBS = $(MBEDTLS_LIB)/libmbedtls.a \
@@ -31,7 +32,7 @@ MBEDTLS_LIBS = $(MBEDTLS_LIB)/libmbedtls.a \
 
 # ── bot sources ──────────────────────────────────────────────────
 BIN  = king
-SRCS = king.c net.c ws.c json.c
+SRCS = src/king.c src/net.c src/ws.c src/json.c src/str.c
 OBJS = $(SRCS:.c=.o)
 
 # ── targets ──────────────────────────────────────────────────────
@@ -40,8 +41,8 @@ all: $(BIN)
 $(BIN): $(OBJS) $(MBEDTLS_LIBS)
 	$(CC) $(LDFLAGS) -o $@ $(OBJS) -L$(MBEDTLS_LIB) -lmbedtls -lmbedx509 -lmbedcrypto
 
-%.o: %.c $(MBEDTLS_LIBS)
-	$(CC) $(CFLAGS) -I$(MBEDTLS_INC) -c $< -o $@
+src/%.o: src/%.c $(MBEDTLS_LIBS)
+	$(CC) $(CFLAGS) -I$(MBEDTLS_INC) -Isrc -c $< -o $@
 
 # Build mbedtls from the vendored submodule.
 # WARNING_CFLAGS= suppresses warnings from mbedtls source that cosmocc flags.
@@ -54,8 +55,19 @@ $(MBEDTLS_LIBS):
 	$(MAKE) -C $(MBEDTLS_LIB) CC=$(CC) AR=$(AR) \
 		CFLAGS="-Os -I../include" WARNING_CFLAGS= APPLE_BUILD=0
 
+# ── tests ────────────────────────────────────────────────────────
+TEST_BIN  = test_king
+TEST_SRCS = src/test_king.c src/json.c src/str.c
+TEST_OBJS = $(TEST_SRCS:.c=.o)
+
+test: $(TEST_BIN)
+	./$(TEST_BIN)
+
+$(TEST_BIN): $(TEST_OBJS)
+	$(CC) $(LDFLAGS) -o $@ $(TEST_OBJS)
+
 clean:
-	rm -f $(BIN) $(OBJS) *.com.dbg *.aarch64.elf
+	rm -f $(BIN) $(TEST_BIN) $(OBJS) src/test_king.o *.com.dbg *.aarch64.elf
 	rm -rf .aarch64
 
 mbedclean:
@@ -64,4 +76,4 @@ mbedclean:
 distclean: clean mbedclean
 	rm -rf .cosmocc
 
-.PHONY: all clean mbedclean distclean
+.PHONY: all test clean mbedclean distclean

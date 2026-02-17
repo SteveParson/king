@@ -6,67 +6,9 @@ on:
 
 permissions:
   contents: write
-  packages: write
 
 jobs:
   build:
-    strategy:
-      matrix:
-        include:
-          - name: linux-x86_64
-            os: ubuntu-latest
-          - name: macos-arm64
-            os: macos-latest
-          - name: macos-x86_64
-            os: macos-15-intel
-
-    runs-on: ${{ matrix.os }}
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - name: Install dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y autoconf automake
-
-      - name: Install dependencies (macOS)
-        if: runner.os == 'macOS'
-        run: brew install automake autoconf
-
-      - name: Configure
-        run: |
-          ./autogen.sh
-          ./configure
-
-      - name: Test
-        run: make check
-
-      - name: Build standard
-        run: |
-          make
-          cp src/discord2 discord2-${{ matrix.name }}
-
-      - name: Build small
-        run: |
-          make -C src clean
-          make small
-          cp src/discord2 discord2-${{ matrix.name }}-small
-
-      - name: Build tiny
-        run: |
-          make -C src clean
-          make tiny
-          cp src/discord2 discord2-${{ matrix.name }}-tiny
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: binaries-${{ matrix.name }}
-          path: discord2-${{ matrix.name }}*
-
-  cosmo:
     runs-on: ubuntu-latest
 
     steps:
@@ -77,39 +19,35 @@ jobs:
       - name: Cache cosmocc
         uses: actions/cache@v4
         with:
-          path: cosmo/.cosmocc
+          path: .cosmocc
           key: cosmocc-3.9.2
 
-      - name: Build APE
-        run: make -C cosmo
+      - name: Build
+        run: make
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: binaries-cosmo-ape
-          path: cosmo/king
+          name: king-ape
+          path: king
 
   release:
-    needs: [build, cosmo]
+    needs: build
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download all artifacts
+      - name: Download artifact
         uses: actions/download-artifact@v4
         with:
+          name: king-ape
           path: artifacts
-          pattern: binaries-*
-          merge-multiple: true
-
-      - name: Rename cosmo binary
-        run: mv artifacts/king artifacts/discord2-cosmo-ape
 
       - name: Generate checksums
         run: |
           cd artifacts
-          sha256sum discord2-* > checksums-sha256.txt
+          sha256sum king > checksums-sha256.txt
 
       - name: Compute tag
         id: tag
@@ -123,7 +61,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           COMMIT_MSG=$(git log -1 --format=%s)
-          IMAGE_NAME="ghcr.io/${GITHUB_REPOSITORY,,}"
           gh release create "${{ steps.tag.outputs.tag }}" \
             --title "${{ steps.tag.outputs.tag }}" \
             --notes "**${COMMIT_MSG}**
@@ -132,54 +69,5 @@ jobs:
 
           | File | Description |
           |------|-------------|
-          | \`discord2-linux-x86_64\` | Linux x86_64 — standard build |
-          | \`discord2-linux-x86_64-small\` | Linux x86_64 — size-optimized (-Os) |
-          | \`discord2-linux-x86_64-tiny\` | Linux x86_64 — smallest (logs stripped) |
-          | \`discord2-macos-x86_64\` | macOS Intel — standard build |
-          | \`discord2-macos-x86_64-small\` | macOS Intel — size-optimized (-Os) |
-          | \`discord2-macos-x86_64-tiny\` | macOS Intel — smallest (logs stripped) |
-          | \`discord2-macos-arm64\` | macOS Apple Silicon — standard build |
-          | \`discord2-macos-arm64-small\` | macOS Apple Silicon — size-optimized (-Os) |
-          | \`discord2-macos-arm64-tiny\` | macOS Apple Silicon — smallest (logs stripped) |
-          | \`discord2-cosmo-ape\` | Cosmopolitan APE — runs on Linux/macOS/Windows/BSD |
-          | Docker | \`${IMAGE_NAME}:${{ steps.tag.outputs.tag }}\` |" \
-            artifacts/discord2-* artifacts/checksums-sha256.txt
-
-  docker:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - name: Compute tag and image name
-        id: meta
-        run: |
-          COMMIT_DATE=$(git log -1 --format=%cd --date=format:%Y.%m.%d)
-          SHORT_SHA=$(git rev-parse --short=7 HEAD)
-          echo "tag=v${COMMIT_DATE}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ${{ steps.meta.outputs.image }}:latest
-            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}
+          | \`king\` | Actually Portable Executable — runs on Linux, macOS, Windows, FreeBSD, OpenBSD, NetBSD |" \
+            artifacts/king artifacts/checksums-sha256.txt
