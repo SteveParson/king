@@ -16,19 +16,22 @@ enum { LOG_LEVEL_ERROR = 0, LOG_LEVEL_INFO = 1, LOG_LEVEL_DEBUG = 2 };
 static int g_log_level = LOG_LEVEL_INFO;
 
 static inline void log_init_from_env(void) {
-    const char* lvl = getenv("LOG_LEVEL");
-    if (!lvl || !*lvl)
+    const char *lvl = getenv("LOG_LEVEL");
+    if (!lvl || !*lvl) {
         return;
-    if (strcmp(lvl, "error") == 0)
+    }
+    if (strcmp(lvl, "error") == 0) {
         g_log_level = LOG_LEVEL_ERROR;
-    else if (strcmp(lvl, "debug") == 0)
+    } else if (strcmp(lvl, "debug") == 0) {
         g_log_level = LOG_LEVEL_DEBUG;
+    }
 }
 
 #if LOG_LEVEL_COMPILE >= LOG_LEVEL_ERROR
-__attribute__((format(printf, 1, 2))) static inline void log_error(const char* fmt, ...) {
-    if (g_log_level < LOG_LEVEL_ERROR)
+__attribute__((format(printf, 1, 2))) static inline void log_error(const char *fmt, ...) {
+    if (g_log_level < LOG_LEVEL_ERROR) {
         return;
+    }
     va_list ap;
     va_start(ap, fmt);
     fprintf(stderr, "[ERROR] ");
@@ -43,9 +46,10 @@ __attribute__((format(printf, 1, 2))) static inline void log_error(const char* f
 #endif
 
 #if LOG_LEVEL_COMPILE >= LOG_LEVEL_INFO
-__attribute__((format(printf, 1, 2))) static inline void log_info(const char* fmt, ...) {
-    if (g_log_level < LOG_LEVEL_INFO)
+__attribute__((format(printf, 1, 2))) static inline void log_info(const char *fmt, ...) {
+    if (g_log_level < LOG_LEVEL_INFO) {
         return;
+    }
     va_list ap;
     va_start(ap, fmt);
     fprintf(stderr, "[INFO] ");
@@ -60,9 +64,10 @@ __attribute__((format(printf, 1, 2))) static inline void log_info(const char* fm
 #endif
 
 #if LOG_LEVEL_COMPILE >= LOG_LEVEL_DEBUG
-__attribute__((format(printf, 1, 2))) static inline void log_debug(const char* fmt, ...) {
-    if (g_log_level < LOG_LEVEL_DEBUG)
+__attribute__((format(printf, 1, 2))) static inline void log_debug(const char *fmt, ...) {
+    if (g_log_level < LOG_LEVEL_DEBUG) {
         return;
+    }
     va_list ap;
     va_start(ap, fmt);
     fprintf(stderr, "[DEBUG] ");

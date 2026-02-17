@@ -26,8 +26,8 @@ static int _pass = 0, _fail = 0;
 
 #define ASSERT_STR(got, want)                                                                      \
     do {                                                                                           \
-        const char* _g = (got);                                                                    \
-        const char* _w = (want);                                                                   \
+        const char *_g = (got);                                                                    \
+        const char *_w = (want);                                                                   \
         if (strcmp(_g, _w) == 0) {                                                                 \
             _pass++;                                                                               \
         } else {                                                                                   \

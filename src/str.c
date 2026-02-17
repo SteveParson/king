@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
-int contains_case(const char* hay, const char* needle) {
+int contains_case(const char *hay, const char *needle) {
     if (!hay || !needle || !*needle) {
         return 0;
     }
@@ -33,7 +33,7 @@ int contains_case(const char* hay, const char* needle) {
     return 0;
 }
 
-void json_escape(const char* in, char* out, size_t cap) {
+void json_escape(const char *in, char *out, size_t cap) {
     size_t o = 0;
     for (size_t i = 0; in[i] && o + 2 < cap; i++) {
         unsigned char ch = (unsigned char)in[i];
@@ -65,8 +65,8 @@ void json_escape(const char* in, char* out, size_t cap) {
     out[o] = '\0';
 }
 
-void url_encode(const char* in, char* out, size_t cap) {
-    static const char* hex = "0123456789ABCDEF";
+void url_encode(const char *in, char *out, size_t cap) {
+    static const char *hex = "0123456789ABCDEF";
     size_t o = 0;
     for (size_t i = 0; in[i] && o + 4 < cap; i++) {
         unsigned char ch = (unsigned char)in[i];
@@ -84,11 +84,11 @@ void url_encode(const char* in, char* out, size_t cap) {
     out[o] = '\0';
 }
 
-int http_status_code(const char* resp) {
+int http_status_code(const char *resp) {
     if (!resp) {
         return -1;
     }
-    const char* p = strstr(resp, "HTTP/");
+    const char *p = strstr(resp, "HTTP/");
     if (!p) {
         return -1;
     }

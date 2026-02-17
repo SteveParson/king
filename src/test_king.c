@@ -79,14 +79,14 @@ int main(void) {
      * ================================================================== */
 
     /* HELLO (op=10) */
-    const char* hello = "{\"op\":10,\"d\":{\"heartbeat_interval\":41250}}";
+    const char *hello = "{\"op\":10,\"d\":{\"heartbeat_interval\":41250}}";
     ASSERT(json_get_int(hello, "op", &n) && n == 10);
 
     json_object_key hb_key = {"d", "heartbeat_interval"};
     ASSERT(json_get_int_in_object(hello, &hb_key, &n) && n == 41250);
 
     /* MESSAGE_CREATE (op=0) */
-    const char* msg = "{\"op\":0,\"t\":\"MESSAGE_CREATE\","
+    const char *msg = "{\"op\":0,\"t\":\"MESSAGE_CREATE\","
                       "\"d\":{\"id\":\"111\",\"channel_id\":\"222\",\"content\":\"hello king\"}}";
 
     json_object_key content_key = {"d", "content"};

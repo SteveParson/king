@@ -3,14 +3,14 @@
 #include <ctype.h>
 #include <string.h>
 
-static const char* skip_ws(const char* p) {
+static const char *skip_ws(const char *p) {
     while (p && *p && isspace((unsigned char)*p)) {
         p++;
     }
     return p;
 }
 
-static int read_string_value(const char* c, char* out, size_t cap) {
+static int read_string_value(const char *c, char *out, size_t cap) {
     if (!c || *c != '"') {
         return 0;
     }
@@ -66,16 +66,16 @@ static int read_string_value(const char* c, char* out, size_t cap) {
     return 1;
 }
 
-const char* json_find_key(const char* json, const char* key) {
+const char *json_find_key(const char *json, const char *key) {
     if (!json || !key) {
         return NULL;
     }
     size_t klen = strlen(key);
-    const char* p = json;
+    const char *p = json;
     while ((p = strstr(p, "\"")) != NULL) {
         p++;
         if (strncmp(p, key, klen) == 0 && p[klen] == '"') {
-            const char* v = skip_ws(p + klen + 1);
+            const char *v = skip_ws(p + klen + 1);
             if (*v != ':') {
                 p = v;
                 continue;
@@ -87,12 +87,12 @@ const char* json_find_key(const char* json, const char* key) {
     return NULL;
 }
 
-int json_get_string(const char* json, const char* key, char* out, size_t cap) {
+int json_get_string(const char *json, const char *key, char *out, size_t cap) {
     return read_string_value(json_find_key(json, key), out, cap);
 }
 
-int json_get_int(const char* json, const char* key, long long* out) {
-    const char* p = json_find_key(json, key);
+int json_get_int(const char *json, const char *key, long long *out) {
+    const char *p = json_find_key(json, key);
     if (!p) {
         return 0;
     }
@@ -114,13 +114,13 @@ int json_get_int(const char* json, const char* key, long long* out) {
 }
 
 /* Find the byte range of a JSON object value. */
-static int find_object_range(const char* json, const char* okey, const char** start,
-                             const char** end) {
-    const char* p = json_find_key(json, okey);
+static int find_object_range(const char *json, const char *okey, const char **start,
+                             const char **end) {
+    const char *p = json_find_key(json, okey);
     if (!p || *p != '{') {
         return 0;
     }
-    const char* s = p;
+    const char *s = p;
     int depth = 0;
     int in_str = 0;
     int esc = 0;
@@ -153,7 +153,7 @@ static int find_object_range(const char* json, const char* okey, const char** st
     return 0;
 }
 
-static const char* find_string_end(const char* s, const char* end) {
+static const char *find_string_end(const char *s, const char *end) {
     int esc = 0;
     while (s < end) {
         if (esc) {
@@ -174,19 +174,19 @@ static const char* find_string_end(const char* s, const char* end) {
     return NULL;
 }
 
-static int scan_key(const char* start, const char* end, const char* key, const char** val) {
+static int scan_key(const char *start, const char *end, const char *key, const char **val) {
     size_t klen = strlen(key);
     int depth = 0;
-    const char* p = start;
+    const char *p = start;
     while (p < end) {
         if (*p == '"') {
-            const char* ks = p + 1;
-            const char* ke = find_string_end(ks, end);
+            const char *ks = p + 1;
+            const char *ke = find_string_end(ks, end);
             if (!ke) {
                 return 0;
             }
             if (depth == 1 && (size_t)(ke - ks) == klen && strncmp(ks, key, klen) == 0) {
-                const char* v = skip_ws(ke + 1);
+                const char *v = skip_ws(ke + 1);
                 if (*v != ':') {
                     return 0;
                 }
@@ -206,10 +206,10 @@ static int scan_key(const char* start, const char* end, const char* key, const c
     return 0;
 }
 
-int json_get_string_in_object(const char* json, const json_object_key* key, char* out, size_t cap) {
-    const char* start;
-    const char* end;
-    const char* val = NULL;
+int json_get_string_in_object(const char *json, const json_object_key *key, char *out, size_t cap) {
+    const char *start;
+    const char *end;
+    const char *val = NULL;
     if (!find_object_range(json, key->object_key, &start, &end)) {
         return 0;
     }
@@ -219,10 +219,10 @@ int json_get_string_in_object(const char* json, const json_object_key* key, char
     return read_string_value(val, out, cap);
 }
 
-int json_get_int_in_object(const char* json, const json_object_key* key, long long* out) {
-    const char* start;
-    const char* end;
-    const char* val = NULL;
+int json_get_int_in_object(const char *json, const json_object_key *key, long long *out) {
+    const char *start;
+    const char *end;
+    const char *val = NULL;
     if (!find_object_range(json, key->object_key, &start, &end)) {
         return 0;
     }
