@@ -4,6 +4,7 @@
 # Usage:
 #   make          — builds the 'king' APE binary (auto-downloads cosmocc)
 #   make test     — builds and runs tests
+#   make lint     — runs clang-format and clang-tidy checks
 #   make clean    — removes build artifacts
 #   make distclean — also removes downloaded cosmocc toolchain
 
@@ -66,6 +67,14 @@ test: $(TEST_BIN)
 $(TEST_BIN): $(TEST_OBJS)
 	$(CC) $(LDFLAGS) -o $@ $(TEST_OBJS)
 
+# ── lint ─────────────────────────────────────────────────────────
+LINT_SRCS = src/king.c src/net.c src/ws.c src/json.c src/str.c src/test_king.c
+LINT_HDRS = src/json.h src/str.h src/net.h src/ws.h src/log.h src/test.h src/cacerts.h
+
+lint:
+	clang-format --dry-run --Werror $(LINT_SRCS) $(LINT_HDRS)
+	clang-tidy $(LINT_SRCS) -- -Isrc -I$(MBEDTLS_INC)
+
 clean:
 	rm -f $(BIN) $(TEST_BIN) $(OBJS) src/test_king.o *.com.dbg *.aarch64.elf
 	rm -rf .aarch64
@@ -76,4 +85,4 @@ mbedclean:
 distclean: clean mbedclean
 	rm -rf .cosmocc
 
-.PHONY: all test clean mbedclean distclean
+.PHONY: all test lint clean mbedclean distclean

@@ -14,34 +14,33 @@
 
 static int _pass = 0, _fail = 0;
 
-#define ASSERT(cond)                                                          \
-    do {                                                                      \
-        if (cond) {                                                           \
-            _pass++;                                                          \
-        } else {                                                              \
-            fprintf(stderr, "FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); \
-            _fail++;                                                          \
-        }                                                                     \
+#define ASSERT(cond)                                                                               \
+    do {                                                                                           \
+        if (cond) {                                                                                \
+            _pass++;                                                                               \
+        } else {                                                                                   \
+            fprintf(stderr, "FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);                        \
+            _fail++;                                                                               \
+        }                                                                                          \
     } while (0)
 
-#define ASSERT_STR(got, want)                                                 \
-    do {                                                                      \
-        const char *_g = (got);                                               \
-        const char *_w = (want);                                              \
-        if (strcmp(_g, _w) == 0) {                                            \
-            _pass++;                                                          \
-        } else {                                                              \
-            fprintf(stderr, "FAIL %s:%d  got=\"%s\" want=\"%s\"\n",          \
-                    __FILE__, __LINE__, _g, _w);                              \
-            _fail++;                                                          \
-        }                                                                     \
+#define ASSERT_STR(got, want)                                                                      \
+    do {                                                                                           \
+        const char* _g = (got);                                                                    \
+        const char* _w = (want);                                                                   \
+        if (strcmp(_g, _w) == 0) {                                                                 \
+            _pass++;                                                                               \
+        } else {                                                                                   \
+            fprintf(stderr, "FAIL %s:%d  got=\"%s\" want=\"%s\"\n", __FILE__, __LINE__, _g, _w);   \
+            _fail++;                                                                               \
+        }                                                                                          \
     } while (0)
 
 /* Print summary and return 0 (all passed) or 1 (some failed). */
-#define TEST_SUMMARY()                                                        \
-    do {                                                                      \
-        printf("%d passed, %d failed\n", _pass, _fail);                      \
-        return _fail ? 1 : 0;                                                 \
+#define TEST_SUMMARY()                                                                             \
+    do {                                                                                           \
+        printf("%d passed, %d failed\n", _pass, _fail);                                            \
+        return _fail ? 1 : 0;                                                                      \
     } while (0)
 
 #endif
