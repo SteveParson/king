@@ -1,6 +1,3 @@
-[submodule "vendor/bearssl"]
-	path = vendor/bearssl
-	url = https://github.com/status-im/BearSSL
 [submodule "vendor/mbedtls"]
 	path = vendor/mbedtls
 	url = https://github.com/Mbed-TLS/mbedtls.git

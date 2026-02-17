@@ -1,284 +1,151 @@
-/* Tiny, targeted JSON helpers: enough for Discord payloads we read. */
+/* Tiny JSON helpers: enough for Discord gateway payloads. */
 #include "json.h"
-
 #include <ctype.h>
 #include <string.h>
 
-/* Skip ASCII whitespace. */
-static const char* skip_ws(const char* ptr) {
-    while (ptr && *ptr && isspace((unsigned char)*ptr)) {
-        ptr++;
-    }
-    return ptr;
+static const char *skip_ws(const char *p) {
+    while (p && *p && isspace((unsigned char)*p)) p++;
+    return p;
 }
 
-static size_t append_char(char* out, size_t out_cap, size_t out_len, char value) {
-    if (out_len + 1 < out_cap) {
-        out[out_len++] = value;
-    }
-    return out_len;
-}
-
-static void skip_unicode_escape(const char** cursor) {
-    int count = 0;
-    while (count < 4 && (*cursor)[1]) {
-        (*cursor)++;
-        count++;
-    }
-}
-
-static size_t handle_escape(const char** cursor, char* out, size_t out_cap, size_t out_len) {
-    char esc = **cursor;
-    switch (esc) {
-    case '"':
-    case '\\':
-    case '/':
-        out_len = append_char(out, out_cap, out_len, esc);
-        break;
-    case 'b':
-        out_len = append_char(out, out_cap, out_len, '\b');
-        break;
-    case 'f':
-        out_len = append_char(out, out_cap, out_len, '\f');
-        break;
-    case 'n':
-        out_len = append_char(out, out_cap, out_len, '\n');
-        break;
-    case 'r':
-        out_len = append_char(out, out_cap, out_len, '\r');
-        break;
-    case 't':
-        out_len = append_char(out, out_cap, out_len, '\t');
-        break;
-    case 'u':
-        skip_unicode_escape(cursor);
-        break;
-    default:
-        break;
-    }
-    return out_len;
-}
-
-/* Read a JSON string value into out; minimal escape handling. */
-static int read_string_value(const char* cursor, char* out, size_t out_cap) {
-    if (!cursor || *cursor != '"') {
-        return 0;
-    }
-    cursor++;
-    size_t out_len = 0;
-    while (*cursor && *cursor != '"') {
-        if (*cursor == '\\') {
-            cursor++;
-            if (!*cursor) {
-                break;
+static int read_string_value(const char *c, char *out, size_t cap) {
+    if (!c || *c != '"') return 0;
+    c++;
+    size_t len = 0;
+    while (*c && *c != '"') {
+        if (*c == '\\') {
+            c++;
+            if (!*c) break;
+            char ch = 0;
+            switch (*c) {
+            case '"': case '\\': case '/': ch = *c; break;
+            case 'b': ch = '\b'; break;
+            case 'f': ch = '\f'; break;
+            case 'n': ch = '\n'; break;
+            case 'r': ch = '\r'; break;
+            case 't': ch = '\t'; break;
+            case 'u': for (int i = 0; i < 4 && c[1]; i++) c++; break;
             }
-            out_len = handle_escape(&cursor, out, out_cap, out_len);
+            if (ch && len + 1 < cap) out[len++] = ch;
         } else {
-            out_len = append_char(out, out_cap, out_len, *cursor);
+            if (len + 1 < cap) out[len++] = *c;
         }
-        cursor++;
+        c++;
     }
-    if (out_cap > 0) {
-        out[out_len < out_cap ? out_len : out_cap - 1] = '\0';
-    }
+    if (cap > 0) out[len < cap ? len : cap - 1] = '\0';
     return 1;
 }
 
-/* Locate a top-level key occurrence and return the start of its value. */
-const char* json_find_key(const char* json, const char* key) {
-    if (!json || !key) {
-        return NULL;
-    }
+const char *json_find_key(const char *json, const char *key) {
+    if (!json || !key) return NULL;
     size_t klen = strlen(key);
-    const char* ptr = json;
-    while ((ptr = strstr(ptr, "\"")) != NULL) {
-        ptr++;
-        if (strncmp(ptr, key, klen) == 0 && ptr[klen] == '"') {
-            const char* value_ptr = ptr + klen + 1;
-            value_ptr = skip_ws(value_ptr);
-            if (*value_ptr != ':') {
-                ptr = value_ptr;
-                continue;
-            }
-            value_ptr++;
-            return skip_ws(value_ptr);
+    const char *p = json;
+    while ((p = strstr(p, "\"")) != NULL) {
+        p++;
+        if (strncmp(p, key, klen) == 0 && p[klen] == '"') {
+            const char *v = skip_ws(p + klen + 1);
+            if (*v != ':') { p = v; continue; }
+            return skip_ws(v + 1);
         }
-        ptr = ptr + 1;
+        p++;
     }
     return NULL;
 }
 
-int json_get_string(const char* json, const char* key, char* out, size_t out_cap) {
-    const char* ptr = json_find_key(json, key);
-    return read_string_value(ptr, out, out_cap);
+int json_get_string(const char *json, const char *key, char *out, size_t cap) {
+    return read_string_value(json_find_key(json, key), out, cap);
 }
 
-int json_get_int(const char* json, const char* key, long long* out) {
-    const char* ptr = json_find_key(json, key);
-    if (!ptr) {
-        return 0;
-    }
+int json_get_int(const char *json, const char *key, long long *out) {
+    const char *p = json_find_key(json, key);
+    if (!p) return 0;
     int neg = 0;
-    if (*ptr == '-') {
-        neg = 1;
-        ptr++;
-    }
-    if (!isdigit((unsigned char)*ptr)) {
-        return 0;
-    }
-    long long value = 0;
-    while (isdigit((unsigned char)*ptr)) {
-        value = (value * 10) + (*ptr - '0');
-        ptr++;
-    }
-    *out = neg ? -value : value;
+    if (*p == '-') { neg = 1; p++; }
+    if (!isdigit((unsigned char)*p)) return 0;
+    long long v = 0;
+    while (isdigit((unsigned char)*p)) { v = v * 10 + (*p - '0'); p++; }
+    *out = neg ? -v : v;
     return 1;
 }
 
-/* Find the byte range for a JSON object value. */
-static int find_object_range(const char* json, const char* object_key, json_range* range) {
-    const char* ptr = json_find_key(json, object_key);
-    if (!ptr || *ptr != '{') {
-        return 0;
-    }
-    const char* start = ptr;
-    int depth = 0;
-    int in_string = 0;
-    int esc = 0;
-    for (; *ptr; ptr++) {
-        if (in_string) {
-            if (esc) {
-                esc = 0;
-                continue;
-            }
-            if (*ptr == '\\') {
-                esc = 1;
-            } else if (*ptr == '"') {
-                in_string = 0;
-            }
+/* Find the byte range of a JSON object value. */
+static int find_object_range(const char *json, const char *okey,
+                             const char **start, const char **end) {
+    const char *p = json_find_key(json, okey);
+    if (!p || *p != '{') return 0;
+    const char *s = p;
+    int depth = 0, in_str = 0, esc = 0;
+    for (; *p; p++) {
+        if (in_str) {
+            if (esc) { esc = 0; continue; }
+            if (*p == '\\') esc = 1;
+            else if (*p == '"') in_str = 0;
             continue;
         }
-        if (*ptr == '"') {
-            in_string = 1;
-            continue;
-        }
-        if (*ptr == '{') {
-            depth++;
-        }
-        if (*ptr == '}') {
-            depth--;
-            if (depth == 0) {
-                range->start = start;
-                range->end = ptr + 1;
-                return 1;
-            }
-        }
+        if (*p == '"') { in_str = 1; continue; }
+        if (*p == '{') depth++;
+        if (*p == '}' && --depth == 0) { *start = s; *end = p + 1; return 1; }
     }
     return 0;
 }
 
-static const char* find_string_end(const char* start, const char* end) {
+static const char *find_string_end(const char *s, const char *end) {
     int esc = 0;
-    const char* ptr = start;
-    while (ptr < end) {
-        if (esc) {
-            esc = 0;
-            ptr++;
-            continue;
-        }
-        if (*ptr == '\\') {
-            esc = 1;
-            ptr++;
-            continue;
-        }
-        if (*ptr == '"') {
-            return ptr;
-        }
-        ptr++;
+    while (s < end) {
+        if (esc) { esc = 0; s++; continue; }
+        if (*s == '\\') { esc = 1; s++; continue; }
+        if (*s == '"') return s;
+        s++;
     }
     return NULL;
 }
 
-static void update_depth(char ch, int* depth) {
-    if (ch == '{' || ch == '[') {
-        (*depth)++;
-    } else if (ch == '}' || ch == ']') {
-        (*depth)--;
-    }
-}
-
-/* Scan the object range for a member key at depth 1. */
-static int scan_top_level_key(const char* start, const char* end, const char* key,
-                              const char** out_value) {
+static int scan_key(const char *start, const char *end, const char *key,
+                    const char **val) {
     size_t klen = strlen(key);
     int depth = 0;
-    const char* ptr = start;
-    while (ptr < end) {
-        if (*ptr == '"') {
-            const char* key_start = ptr + 1;
-            const char* key_end = find_string_end(key_start, end);
-            if (!key_end) {
-                return 0;
-            }
-            if (depth == 1 && (size_t)(key_end - key_start) == klen &&
-                strncmp(key_start, key, klen) == 0) {
-                const char* value_ptr = key_end + 1;
-                value_ptr = skip_ws(value_ptr);
-                if (*value_ptr != ':') {
-                    return 0;
-                }
-                value_ptr++;
-                *out_value = skip_ws(value_ptr);
+    const char *p = start;
+    while (p < end) {
+        if (*p == '"') {
+            const char *ks = p + 1;
+            const char *ke = find_string_end(ks, end);
+            if (!ke) return 0;
+            if (depth == 1 && (size_t)(ke - ks) == klen &&
+                strncmp(ks, key, klen) == 0) {
+                const char *v = skip_ws(ke + 1);
+                if (*v != ':') return 0;
+                *val = skip_ws(v + 1);
                 return 1;
             }
-            ptr = key_end;
+            p = ke;
         } else {
-            update_depth(*ptr, &depth);
+            if (*p == '{' || *p == '[') depth++;
+            else if (*p == '}' || *p == ']') depth--;
         }
-        ptr++;
+        p++;
     }
     return 0;
 }
 
-int json_get_string_in_object(const char* json, const json_object_key* key, char* out,
-                              size_t out_cap) {
-    json_range range;
-    const char* val = NULL;
-    if (!find_object_range(json, key->object_key, &range)) {
-        return 0;
-    }
-    if (!scan_top_level_key(range.start, range.end, key->member_key, &val)) {
-        return 0;
-    }
-    return read_string_value(val, out, out_cap);
+int json_get_string_in_object(const char *json, const json_object_key *key,
+                              char *out, size_t cap) {
+    const char *start, *end, *val = NULL;
+    if (!find_object_range(json, key->object_key, &start, &end)) return 0;
+    if (!scan_key(start, end, key->member_key, &val)) return 0;
+    return read_string_value(val, out, cap);
 }
 
-int json_get_int_in_object(const char* json, const json_object_key* key, long long* out) {
-    json_range range;
-    const char* val = NULL;
-    if (!find_object_range(json, key->object_key, &range)) {
-        return 0;
-    }
-    if (!scan_top_level_key(range.start, range.end, key->member_key, &val)) {
-        return 0;
-    }
-    if (!val) {
-        return 0;
-    }
-
+int json_get_int_in_object(const char *json, const json_object_key *key,
+                           long long *out) {
+    const char *start, *end, *val = NULL;
+    if (!find_object_range(json, key->object_key, &start, &end)) return 0;
+    if (!scan_key(start, end, key->member_key, &val)) return 0;
+    if (!val) return 0;
     int neg = 0;
-    if (*val == '-') {
-        neg = 1;
-        val++;
-    }
-    if (!isdigit((unsigned char)*val)) {
-        return 0;
-    }
-    long long value = 0;
-    while (isdigit((unsigned char)*val)) {
-        value = (value * 10) + (*val - '0');
-        val++;
-    }
-    *out = neg ? -value : value;
+    if (*val == '-') { neg = 1; val++; }
+    if (!isdigit((unsigned char)*val)) return 0;
+    long long v = 0;
+    while (isdigit((unsigned char)*val)) { v = v * 10 + (*val - '0'); val++; }
+    *out = neg ? -v : v;
     return 1;
 }

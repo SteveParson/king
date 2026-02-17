@@ -1,39 +1,10 @@
-# Autotools generated
-Makefile
-Makefile.in
-autom4te.cache/
-aclocal.m4
-config.h
-config.log
-config.status
-compile
-config.guess
-config.sub
-depcomp
-install-sh
-missing
-ltmain.sh
-configure~
-stamp-h1
-test-driver
-.dirstamp
+# cosmocc toolchain (auto-downloaded)
+.cosmocc/
 
 # Build artifacts
-src/discord2
-discord2
-tests/test_json
-tests/test_discord
 *.o
-*.lo
-*.la
-*.a
-*.d
-*.deps/
-.libs/
-
-# Test output
-*.log
-*.trs
-
-# Local outputs
-lint.txt
+king
+test_king
+*.com.dbg
+*.aarch64.elf
+.aarch64/
