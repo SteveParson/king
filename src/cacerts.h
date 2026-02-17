@@ -193,8 +193,7 @@ static const char CA_BUNDLE_PEM[] =
     "BBSATNbrdP9JNqPV2Py1PsVq8JQdjDAKBggqhkjOPQQDAwNpADBmAjEA6ED/g94D\n"
     "9J+uHXqnLrmvT/aDHQ4thQEd0dlq7A/Cr8deVl5c1RxYIigL9zC2L7F8AjEA8GE8\n"
     "p/SgguMh1YQdc4acLa/KNJvxn7kjNuK8YAOdgLOaVsjh4rsUecrNIdSUtUlD\n"
-    "-----END CERTIFICATE-----\n"
-;
+    "-----END CERTIFICATE-----\n";
 
 static const size_t CA_BUNDLE_PEM_LEN = sizeof(CA_BUNDLE_PEM);
 

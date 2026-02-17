@@ -9,6 +9,18 @@ permissions:
   packages: write
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang tools
+        run: sudo apt-get update && sudo apt-get install -y clang-format clang-tidy
+
+      - name: Lint
+        run: make lint
+
   build:
     runs-on: ubuntu-latest
 
