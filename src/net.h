@@ -22,22 +22,22 @@ typedef struct {
 int tls_init_ca(void);
 
 /* Connect via TLS to host:port. Returns 0 on success, -1 on failure. */
-int tls_connect(tls_conn* c, const char* host, const char* port);
+int tls_connect(tls_conn *c, const char *host, const char *port);
 
 /* Close and free TLS resources. */
-void tls_close(tls_conn* c);
+void tls_close(tls_conn *c);
 
 /* Write exactly len bytes over TLS. Returns 0 on success. */
-int tls_write(tls_conn* c, const void* buf, size_t len);
+int tls_write(tls_conn *c, const void *buf, size_t len);
 
 /* Read up to cap bytes. Returns bytes read, or -1 on error. */
-int tls_read(tls_conn* c, void* buf, size_t cap);
+int tls_read(tls_conn *c, void *buf, size_t cap);
 
 /* Read exactly len bytes. Returns 0 on success. */
-int tls_read_exact(tls_conn* c, void* buf, size_t len);
+int tls_read_exact(tls_conn *c, void *buf, size_t len);
 
 /* Convenience: open a TLS connection, send a raw HTTP request,
    read the full response, close the connection. */
-int https_request(const char* host, const char* port, const char* req, char* resp, size_t resp_cap);
+int https_request(const char *host, const char *port, const char *req, char *resp, size_t resp_cap);
 
 #endif

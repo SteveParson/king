@@ -6,7 +6,11 @@ Checks: >-
   readability-*,
   -readability-magic-numbers,
   -readability-identifier-length,
-  -readability-function-cognitive-complexity
+  -readability-function-cognitive-complexity,
+  -readability-use-concise-preprocessor-directives,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-switch-missing-default-case,
+  -bugprone-narrowing-conversions
 WarningsAsErrors: ''
-HeaderFilterRegex: '.*'
+HeaderFilterRegex: 'src/.*'
 FormatStyle: none

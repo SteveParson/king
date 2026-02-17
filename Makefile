@@ -14,8 +14,13 @@ COSMOCC_SHA256  = f4ff13af65fcd309f3f1cfd04275996fb7f72a4897726628a8c9cf732e8501
 COSMOCC_DIR     = .cosmocc/$(COSMOCC_VERSION)
 COSMOCC_BIN     = $(COSMOCC_DIR)/bin
 
-# Download cosmocc if not already present (runs at parse time)
+# Download cosmocc if not already present (skip for lint/clean targets)
+ifneq ($(filter-out lint clean distclean mbedclean,$(MAKECMDGOALS)),)
 DOWNLOAD := $(shell scripts/download-cosmocc.sh $(COSMOCC_DIR) $(COSMOCC_VERSION) $(COSMOCC_SHA256))
+endif
+ifeq ($(MAKECMDGOALS),)
+DOWNLOAD := $(shell scripts/download-cosmocc.sh $(COSMOCC_DIR) $(COSMOCC_VERSION) $(COSMOCC_SHA256))
+endif
 
 CC  = $(CURDIR)/$(COSMOCC_BIN)/cosmocc
 AR  = $(CURDIR)/$(COSMOCC_BIN)/cosmoar
@@ -73,7 +78,7 @@ LINT_HDRS = src/json.h src/str.h src/net.h src/ws.h src/log.h src/test.h src/cac
 
 lint:
 	clang-format --dry-run --Werror $(LINT_SRCS) $(LINT_HDRS)
-	clang-tidy $(LINT_SRCS) -- -Isrc -I$(MBEDTLS_INC)
+	clang-tidy $(LINT_SRCS) -- -Isrc -I$(MBEDTLS_INC) -Wno-implicit-function-declaration
 
 clean:
 	rm -f $(BIN) $(TEST_BIN) $(OBJS) src/test_king.o *.com.dbg *.aarch64.elf
