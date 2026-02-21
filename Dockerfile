@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /src
 COPY . .
 
-RUN git submodule update --init && make
+RUN git submodule update --init && make && .cosmocc/current/bin/assimilate /src/king
 
 FROM scratch
 
