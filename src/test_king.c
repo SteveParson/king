@@ -21,6 +21,10 @@ int main(void) {
     ASSERT(json_find_key("{\"op\":10}", "missing") == NULL);
     ASSERT(json_find_key(NULL, "op") == NULL);
 
+    /* whitespace around the colon */
+    ASSERT(json_find_key("{\"op\" : 10}", "op") != NULL);
+    ASSERT(json_find_key("{\"op\":\n10}", "op") != NULL);
+
     /* "op" must not match "ops" (exact key length) */
     ASSERT(json_find_key("{\"ops\":20}", "op") == NULL);
 
@@ -62,6 +66,16 @@ int main(void) {
     ASSERT(json_get_string("{\"s\":\"a\\\"b\"}", "s", out, sizeof(out)));
     ASSERT_STR(out, "a\"b");
 
+    /* other recognized escapes */
+    ASSERT(json_get_string("{\"s\":\"a\\/b\"}", "s", out, sizeof(out)));
+    ASSERT_STR(out, "a/b");
+
+    ASSERT(json_get_string("{\"s\":\"a\\bb\"}", "s", out, sizeof(out)));
+    ASSERT_STR(out, "a\bb");
+
+    ASSERT(json_get_string("{\"s\":\"a\\fb\"}", "s", out, sizeof(out)));
+    ASSERT_STR(out, "a\fb");
+
     /* \uXXXX is silently skipped by this minimal parser */
     ASSERT(json_get_string("{\"s\":\"a\\u0041b\"}", "s", out, sizeof(out)));
     ASSERT_STR(out, "ab");
@@ -84,6 +98,11 @@ int main(void) {
 
     json_object_key hb_key = {"d", "heartbeat_interval"};
     ASSERT(json_get_int_in_object(hello, &hb_key, &n) && n == 41250);
+
+    /* negative value inside a nested object */
+    const char *neg_obj = "{\"d\":{\"seq\":-42}}";
+    json_object_key seq_key = {"d", "seq"};
+    ASSERT(json_get_int_in_object(neg_obj, &seq_key, &n) && n == -42);
 
     /* MESSAGE_CREATE (op=0) */
     const char *msg = "{\"op\":0,\"t\":\"MESSAGE_CREATE\","
@@ -176,6 +195,18 @@ int main(void) {
     url_encode("a b", out, sizeof(out));
     ASSERT_STR(out, "a%20b");
 
+    url_encode("a#b", out, sizeof(out));
+    ASSERT_STR(out, "a%23b");
+
+    url_encode("a?b=c&d", out, sizeof(out));
+    ASSERT_STR(out, "a%3Fb%3Dc%26d");
+
+    url_encode("a/b", out, sizeof(out));
+    ASSERT_STR(out, "a%2Fb");
+
+    url_encode("a+b", out, sizeof(out));
+    ASSERT_STR(out, "a%2Bb");
+
     /* multi-byte UTF-8 encoded byte-by-byte */
     url_encode("\xF0\x9F\x91\x91", out, sizeof(out));
     ASSERT_STR(out, "%F0%9F%91%91");
@@ -196,6 +227,8 @@ int main(void) {
     /* malformed */
     ASSERT(http_status_code("not http") == -1);
     ASSERT(http_status_code(NULL) == -1);
+    ASSERT(http_status_code("") == -1);
+    ASSERT(http_status_code("HTTP/1.1 ") == 0);
 
     TEST_SUMMARY();
 }

@@ -18,6 +18,8 @@ export DISCORD_TOKEN='<your_token_here>'
 ./king
 ```
 
+Or copy `.env.sample` to `.env`, fill in your token, and source it before running.
+
 You need **Message Content Intent** enabled in the [Discord Developer Portal](https://discord.com/developers/applications).
 
 | Variable | Default | What it does |
@@ -26,6 +28,22 @@ You need **Message Content Intent** enabled in the [Discord Developer Portal](ht
 | `DISCORD_REPLY` | *(disabled)* | Reply text, omit to disable |
 | `DISCORD_REACTION` | `👑` | Reaction emoji |
 | `LOG_LEVEL` | `info` | `error`, `info`, or `debug` |
+
+## Docker
+
+A pre-built image is published to the GitHub Container Registry:
+
+```bash
+docker run -e DISCORD_TOKEN='<your_token_here>' ghcr.io/steveparson/king:latest
+```
+
+Or using a `.env` file:
+
+```bash
+cp .env.sample .env
+# edit .env with your token
+docker run --env-file .env ghcr.io/steveparson/king:latest
+```
 
 ## Test
 
