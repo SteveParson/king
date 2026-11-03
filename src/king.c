@@ -19,6 +19,25 @@
 #define GATEWAY_PATH "/?v=10&encoding=json"
 #define BUF_SIZE 65536
 
+/* Discord Gateway opcodes we care about. */
+enum {
+    OP_DISPATCH = 0,
+    OP_HEARTBEAT = 1,
+    OP_IDENTIFY = 2,
+    OP_RECONNECT = 7,
+    OP_INVALID_SESSION = 9,
+    OP_HELLO = 10,
+    OP_HEARTBEAT_ACK = 11,
+};
+
+/* GUILD_MESSAGES (512) | MESSAGE_CONTENT (32768) */
+#define GATEWAY_INTENTS 33280
+
+#define HB_MAX_RETRIES 3
+#define HB_RETRY_USEC_START 100000
+
+#define DEFAULT_REACTION "\xf0\x9f\x91\x91" /* 👑 */
+
 /* ── Monotonic clock ──────────────────────────────────────────── */
 
 static long long now_ms(void) {
@@ -54,17 +73,20 @@ static void send_message(const char *auth, const char *channel_id, const char *c
     char body[4096];
     char path[256];
     char resp[4096];
+
     json_escape(content, esc, sizeof(esc));
     snprintf(body, sizeof(body), "{\"content\":\"%s\"}", esc);
     snprintf(path, sizeof(path), "/api/v10/channels/%s/messages", channel_id);
+
     if (api_request(auth, "POST", path, body, resp, sizeof(resp)) != 0) {
         log_error("Failed to send message");
-    } else {
-        int status = http_status_code(resp);
-        log_info("Message send status %d", status);
-        if (status >= 400) {
-            log_error("Message send failed: %.*s", 200, resp);
-        }
+        return;
+    }
+
+    int status = http_status_code(resp);
+    log_info("Message send status %d", status);
+    if (status >= 400) {
+        log_error("Message send failed: %.*s", 200, resp);
     }
 }
 
@@ -73,17 +95,20 @@ static void send_reaction(const char *auth, const char *channel_id, const char *
     if (!emoji || !*emoji) {
         return;
     }
+
     char enc[256];
     char path[512];
     char resp[4096];
+
     url_encode(emoji, enc, sizeof(enc));
     snprintf(path, sizeof(path), "/api/v10/channels/%s/messages/%s/reactions/%s/@me", channel_id,
              message_id, enc);
+
     if (api_request(auth, "PUT", path, "", resp, sizeof(resp)) != 0) {
         log_error("Failed to add reaction");
-    } else {
-        log_info("Reaction add status %d", http_status_code(resp));
+        return;
     }
+    log_info("Reaction add status %d", http_status_code(resp));
 }
 
 /* ── Gateway operations ───────────────────────────────────────── */
@@ -95,18 +120,30 @@ typedef struct {
     long long next_heartbeat;
 } gateway_state;
 
+/* Split DISCORD_TOKEN into REST Authorization header and raw gateway token. */
+static void normalize_token(const char *token, char *auth, size_t auth_cap, char *gateway_token,
+                            size_t gateway_cap) {
+    if (strncmp(token, "Bot ", 4) == 0) {
+        snprintf(auth, auth_cap, "%s", token);
+        snprintf(gateway_token, gateway_cap, "%s", token + 4);
+    } else {
+        snprintf(auth, auth_cap, "Bot %s", token);
+        snprintf(gateway_token, gateway_cap, "%s", token);
+    }
+}
+
 static int send_identify(tls_conn *c, const char *token) {
     char payload[1024];
     int n = snprintf(payload, sizeof(payload),
-                     "{\"op\":2,\"d\":{"
+                     "{\"op\":%d,\"d\":{"
                      "\"token\":\"%s\","
-                     "\"intents\":33280," /* GUILD_MESSAGES + MESSAGE_CONTENT */
+                     "\"intents\":%d,"
                      "\"properties\":{"
                      "\"os\":\"cosmo\","
                      "\"browser\":\"king-cosmo\","
                      "\"device\":\"king-cosmo\""
                      "}}}",
-                     token);
+                     OP_IDENTIFY, token, GATEWAY_INTENTS);
     if (n <= 0 || (size_t)n >= sizeof(payload)) {
         return -1;
     }
@@ -117,9 +154,9 @@ static int send_heartbeat(tls_conn *c, long long seq) {
     char payload[64];
     int n;
     if (seq >= 0) {
-        n = snprintf(payload, sizeof(payload), "{\"op\":1,\"d\":%lld}", seq);
+        n = snprintf(payload, sizeof(payload), "{\"op\":%d,\"d\":%lld}", OP_HEARTBEAT, seq);
     } else {
-        n = snprintf(payload, sizeof(payload), "{\"op\":1,\"d\":null}");
+        n = snprintf(payload, sizeof(payload), "{\"op\":%d,\"d\":null}", OP_HEARTBEAT);
     }
     if (n <= 0 || (size_t)n >= sizeof(payload)) {
         return -1;
@@ -127,9 +164,29 @@ static int send_heartbeat(tls_conn *c, long long seq) {
     return ws_send_text(c, payload, (size_t)n);
 }
 
+static int heartbeat_with_retry(gateway_state *s) {
+    int delay = HB_RETRY_USEC_START;
+
+    for (int attempt = 0; attempt < HB_MAX_RETRIES; attempt++) {
+        if (send_heartbeat(&s->conn, s->sequence) == 0) {
+            log_debug("Heartbeat sent");
+            s->next_heartbeat = now_ms() + s->heartbeat_interval;
+            return 0;
+        }
+        if (attempt + 1 < HB_MAX_RETRIES) {
+            log_error("Heartbeat failed, retrying...");
+            usleep(delay);
+            delay *= 2;
+        }
+    }
+    log_error("Heartbeat failed");
+    return -1;
+}
+
 static int handle_hello(gateway_state *s, const char *token, const char *payload) {
     long long interval = 0;
     json_object_key hb_key = {"d", "heartbeat_interval"};
+
     if (json_get_int_in_object(payload, &hb_key, &interval)) {
         s->heartbeat_interval = interval;
     }
@@ -151,30 +208,27 @@ static void handle_message_create(const char *auth, const char *reply, const cha
     char content[2048];
     char channel_id[64];
     char message_id[64];
-    json_object_key ck = {"d", "content"};
-    json_object_key chk = {"d", "channel_id"};
-    json_object_key mk = {"d", "id"};
+    json_object_key content_key = {"d", "content"};
+    json_object_key channel_key = {"d", "channel_id"};
+    json_object_key id_key = {"d", "id"};
 
-    if (!json_get_string_in_object(payload, &ck, content, sizeof(content))) {
-        return;
-    }
-    if (!json_get_string_in_object(payload, &chk, channel_id, sizeof(channel_id))) {
-        return;
-    }
-    if (!json_get_string_in_object(payload, &mk, message_id, sizeof(message_id))) {
+    if (!json_get_string_in_object(payload, &content_key, content, sizeof(content)) ||
+        !json_get_string_in_object(payload, &channel_key, channel_id, sizeof(channel_id)) ||
+        !json_get_string_in_object(payload, &id_key, message_id, sizeof(message_id))) {
         return;
     }
 
-    if (contains_case(content, "king")) {
-        log_info("Matched 'king' in channel %s", channel_id);
-        if (reply && *reply) {
-            send_message(auth, channel_id, reply);
-        }
-        if (reaction && *reaction) {
-            send_reaction(auth, channel_id, message_id, reaction);
-        }
-    } else {
+    if (!contains_case(content, "king")) {
         log_debug("Message ignored");
+        return;
+    }
+
+    log_info("Matched 'king' in channel %s", channel_id);
+    if (reply && *reply) {
+        send_message(auth, channel_id, reply);
+    }
+    if (reaction && *reaction) {
+        send_reaction(auth, channel_id, message_id, reaction);
     }
 }
 
@@ -182,21 +236,19 @@ static int wait_for_hello(gateway_state *s, const char *token, char *buf, size_t
     size_t len = 0;
     while (ws_read_text(&s->conn, buf, buf_cap, &len) == 0) {
         long long op = -1;
-        if (!json_get_int(buf, "op", &op)) {
-            continue;
-        }
-        if (op == 10) {
+        if (json_get_int(buf, "op", &op) && op == OP_HELLO) {
             return handle_hello(s, token, buf);
         }
     }
     return -1;
 }
 
+/* Returns 0 = payload ready, 1 = idle/timeout, -1 = fatal. */
 static int poll_and_read(gateway_state *s, char *buf, size_t buf_cap) {
     struct pollfd pfd = {.fd = s->conn.fd, .events = POLLIN};
-
     long long now = now_ms();
     int timeout = 1000;
+
     if (s->next_heartbeat > 0) {
         long long diff = s->next_heartbeat - now;
         timeout = diff < 0 ? 0 : (int)diff;
@@ -210,23 +262,9 @@ static int poll_and_read(gateway_state *s, char *buf, size_t buf_cap) {
 
     now = now_ms();
     if (s->next_heartbeat > 0 && now >= s->next_heartbeat) {
-        int hb_ok = 0;
-        int delay = 100000;
-        for (int retries = 0; retries < 3 && !hb_ok; retries++) {
-            if (send_heartbeat(&s->conn, s->sequence) == 0) {
-                hb_ok = 1;
-            } else if (retries < 2) {
-                log_error("Heartbeat failed, retrying...");
-                usleep(delay);
-                delay *= 2;
-            }
-        }
-        if (!hb_ok) {
-            log_error("Heartbeat failed");
+        if (heartbeat_with_retry(s) != 0) {
             return -1;
         }
-        log_debug("Heartbeat sent");
-        s->next_heartbeat = now + s->heartbeat_interval;
     }
 
     if (rc == 0 || !(pfd.revents & POLLIN)) {
@@ -237,6 +275,38 @@ static int poll_and_read(gateway_state *s, char *buf, size_t buf_cap) {
     if (ws_read_text(&s->conn, buf, buf_cap, &len) != 0) {
         log_error("Gateway read failed");
         return -1;
+    }
+    return 0;
+}
+
+/* Handle one gateway JSON payload. Returns -1 if the connection should drop. */
+static int handle_gateway_payload(gateway_state *s, const char *auth, const char *reply,
+                                  const char *reaction, const char *buf) {
+    long long op = -1;
+    if (json_get_int(buf, "op", &op)) {
+        if (op == OP_HEARTBEAT_ACK) {
+            log_debug("Heartbeat ACK");
+            return 0;
+        }
+        if (op == OP_RECONNECT || op == OP_INVALID_SESSION) {
+            log_error("Reconnect requested");
+            return -1;
+        }
+    }
+
+    long long seq = -1;
+    if (json_get_int(buf, "s", &seq)) {
+        s->sequence = seq;
+    }
+
+    char event[64];
+    if (!json_get_string(buf, "t", event, sizeof(event))) {
+        return 0;
+    }
+    if (strcmp(event, "MESSAGE_CREATE") == 0) {
+        handle_message_create(auth, reply, reaction, buf);
+    } else if (strcmp(event, "READY") == 0) {
+        log_info("READY event received");
     }
     return 0;
 }
@@ -255,19 +325,12 @@ int main(void) {
         return 1;
     }
     if (!reaction) {
-        reaction = "\xf0\x9f\x91\x91"; /* crown emoji UTF-8 */
+        reaction = DEFAULT_REACTION;
     }
 
-    /* Build auth header token (REST needs "Bot " prefix). */
     char auth[512];
     char gateway_token[512];
-    if (strncmp(token, "Bot ", 4) == 0) {
-        snprintf(auth, sizeof(auth), "%s", token);
-        snprintf(gateway_token, sizeof(gateway_token), "%s", token + 4);
-    } else {
-        snprintf(auth, sizeof(auth), "Bot %s", token);
-        snprintf(gateway_token, sizeof(gateway_token), "%s", token);
-    }
+    normalize_token(token, auth, sizeof(auth), gateway_token, sizeof(gateway_token));
 
     if (tls_init_ca() != 0) {
         fprintf(stderr, "Failed to init CA certificates\n");
@@ -301,36 +364,10 @@ int main(void) {
             break;
         }
         if (rc > 0) {
-            continue;
+            continue; /* idle / heartbeat-only tick */
         }
-
-        /* Handle gateway opcodes */
-        long long op = -1;
-        if (json_get_int(buf, "op", &op)) {
-            if (op == 11) {
-                log_debug("Heartbeat ACK");
-                continue;
-            }
-            if (op == 7 || op == 9) {
-                log_error("Reconnect requested");
-                break;
-            }
-        }
-
-        /* Update sequence */
-        long long seq = -1;
-        if (json_get_int(buf, "s", &seq)) {
-            state.sequence = seq;
-        }
-
-        /* Dispatch events */
-        char event[64];
-        if (json_get_string(buf, "t", event, sizeof(event))) {
-            if (strcmp(event, "MESSAGE_CREATE") == 0) {
-                handle_message_create(auth, reply, reaction, buf);
-            } else if (strcmp(event, "READY") == 0) {
-                log_info("READY event received");
-            }
+        if (handle_gateway_payload(&state, auth, reply, reaction, buf) != 0) {
+            break;
         }
     }
 

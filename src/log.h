@@ -27,16 +27,21 @@ static inline void log_init_from_env(void) {
     }
 }
 
-#if LOG_LEVEL_COMPILE >= LOG_LEVEL_ERROR
-__attribute__((format(printf, 1, 2))) static inline void log_error(const char *fmt, ...) {
-    if (g_log_level < LOG_LEVEL_ERROR) {
+/* Shared writer — keeps the three public log_* helpers DRY. */
+static inline void log_write(int level, const char *tag, const char *fmt, va_list ap) {
+    if (g_log_level < level) {
         return;
     }
-    va_list ap;
-    va_start(ap, fmt);
-    fprintf(stderr, "[ERROR] ");
+    fprintf(stderr, "%s ", tag);
     vfprintf(stderr, fmt, ap);
     fputc('\n', stderr);
+}
+
+#if LOG_LEVEL_COMPILE >= LOG_LEVEL_ERROR
+__attribute__((format(printf, 1, 2))) static inline void log_error(const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    log_write(LOG_LEVEL_ERROR, "[ERROR]", fmt, ap);
     va_end(ap);
 }
 #else
@@ -47,14 +52,9 @@ __attribute__((format(printf, 1, 2))) static inline void log_error(const char *f
 
 #if LOG_LEVEL_COMPILE >= LOG_LEVEL_INFO
 __attribute__((format(printf, 1, 2))) static inline void log_info(const char *fmt, ...) {
-    if (g_log_level < LOG_LEVEL_INFO) {
-        return;
-    }
     va_list ap;
     va_start(ap, fmt);
-    fprintf(stderr, "[INFO] ");
-    vfprintf(stderr, fmt, ap);
-    fputc('\n', stderr);
+    log_write(LOG_LEVEL_INFO, "[INFO]", fmt, ap);
     va_end(ap);
 }
 #else
@@ -65,14 +65,9 @@ __attribute__((format(printf, 1, 2))) static inline void log_info(const char *fm
 
 #if LOG_LEVEL_COMPILE >= LOG_LEVEL_DEBUG
 __attribute__((format(printf, 1, 2))) static inline void log_debug(const char *fmt, ...) {
-    if (g_log_level < LOG_LEVEL_DEBUG) {
-        return;
-    }
     va_list ap;
     va_start(ap, fmt);
-    fprintf(stderr, "[DEBUG] ");
-    vfprintf(stderr, fmt, ap);
-    fputc('\n', stderr);
+    log_write(LOG_LEVEL_DEBUG, "[DEBUG]", fmt, ap);
     va_end(ap);
 }
 #else
