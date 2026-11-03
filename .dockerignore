@@ -1,0 +1,23 @@
+# Local secrets / env
+.env
+.env.*
+!.env.sample
+
+# Toolchain + build outputs (downloaded/built inside the image)
+.cosmocc/
+*.o
+king
+test_king
+*.com.dbg
+*.aarch64.elf
+.aarch64/
+dist/
+
+# Git metadata (submodules must already be checked out into vendor/)
+.git/
+.gitignore
+.gitmodules
+
+# CI / compose noise (not needed inside build context)
+.github/
+docker-compose.yml

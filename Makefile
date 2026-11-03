@@ -1,21 +1,37 @@
 # Cosmopolitan build for King Discord bot
 # Produces an Actually Portable Executable (APE)
 #
-# Usage:
-#   make          — builds the 'king' APE binary (auto-downloads cosmocc)
+# Usage (Docker-first — preferred on macOS; only Docker needed on the host):
+#   make docker-test   — build + run unit tests in Docker
+#   make docker-lint   — clang-format + clang-tidy in Docker (LLVM 21)
+#   make docker-king   — write ./king APE binary via Docker (no host cosmocc)
+#   make docker-image  — build runtime scratch image tagged king:local
+#   make docker-run    — run king:local with .env / env vars
+#
+# Native (downloads cosmocc onto the host):
+#   make          — builds the 'king' APE binary
 #   make test     — builds and runs tests
 #   make lint     — runs clang-format and clang-tidy checks
 #   make clean    — removes build artifacts
 #   make distclean — also removes downloaded cosmocc toolchain
 
-# ── cosmocc toolchain (auto-downloaded) ──────────────────────────
+# ── Docker-first wrappers (no host cosmocc / clang) ──────────────
+DOCKER      ?= docker
+DOCKER_IMAGE ?= king
+export DOCKER_BUILDKIT ?= 1
+
+# Skip cosmocc download for Docker / lint / clean goals
+DOCKER_GOALS = docker-test docker-lint docker-king docker-image docker-run docker-builder
+SKIP_COSMOCC_GOALS = lint clean distclean mbedclean $(DOCKER_GOALS)
+
+# ── cosmocc toolchain (auto-downloaded for native builds) ────────
 COSMOCC_VERSION = 3.9.2
 COSMOCC_SHA256  = f4ff13af65fcd309f3f1cfd04275996fb7f72a4897726628a8c9cf732e850193
 COSMOCC_DIR     = .cosmocc/$(COSMOCC_VERSION)
 COSMOCC_BIN     = $(COSMOCC_DIR)/bin
 
-# Download cosmocc if not already present (skip for lint/clean targets)
-ifneq ($(filter-out lint clean distclean mbedclean,$(MAKECMDGOALS)),)
+# Download cosmocc if not already present (skip for lint/clean/docker targets)
+ifneq ($(filter-out $(SKIP_COSMOCC_GOALS),$(MAKECMDGOALS)),)
 DOWNLOAD := $(shell scripts/download-cosmocc.sh $(COSMOCC_DIR) $(COSMOCC_VERSION) $(COSMOCC_SHA256))
 endif
 ifeq ($(MAKECMDGOALS),)
@@ -90,4 +106,37 @@ mbedclean:
 distclean: clean mbedclean
 	rm -rf .cosmocc
 
-.PHONY: all test lint clean mbedclean distclean
+# ── Docker targets ───────────────────────────────────────────────
+# All compile/test/lint work happens inside the image. The host only
+# needs Docker; cosmocc and LLVM are not installed locally.
+
+docker-builder:
+	$(DOCKER) build --target builder -t $(DOCKER_IMAGE):builder .
+
+docker-test:
+	$(DOCKER) build --target test -t $(DOCKER_IMAGE):test .
+
+docker-lint:
+	$(DOCKER) build --target lint -t $(DOCKER_IMAGE):lint .
+
+# Extract the portable APE (pre-assimilate) to ./king on the host.
+docker-king: docker-builder
+	@cid=$$($(DOCKER) create $(DOCKER_IMAGE):builder); \
+	  $(DOCKER) cp $$cid:/artifacts/king ./king; \
+	  $(DOCKER) rm $$cid >/dev/null; \
+	  echo "wrote ./king"
+
+docker-image:
+	$(DOCKER) build --target runtime -t $(DOCKER_IMAGE):local .
+
+docker-run: docker-image
+	@if [ -f .env ]; then \
+	  $(DOCKER) run --rm --env-file .env $(DOCKER_IMAGE):local; \
+	else \
+	  $(DOCKER) run --rm \
+	    -e DISCORD_TOKEN -e DISCORD_REPLY -e DISCORD_REACTION -e LOG_LEVEL \
+	    $(DOCKER_IMAGE):local; \
+	fi
+
+.PHONY: all test lint clean mbedclean distclean \
+	docker-builder docker-test docker-lint docker-king docker-image docker-run
