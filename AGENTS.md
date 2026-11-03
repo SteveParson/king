@@ -51,7 +51,7 @@ Built with Cosmopolitan Libc and mbedtls for TLS. ~1000 lines of C in `src/`.
 | `src/net.c` | TCP + mbedtls TLS connect, custom BIO callbacks, HTTPS request helper |
 | `src/ws.c` | Minimal WebSocket client (masked client frames, text frames only) |
 | `src/json.c` | Targeted key extraction — not a general-purpose parser |
-| `src/log.h` | Header-only runtime log levels; compile-time stripping via `LOG_LEVEL_COMPILE` |
+| `src/log.h` / `src/log.c` | Wide-event NDJSON logger (`log_emit`); info/error; env: `LOG_LEVEL`, `LOG_SAMPLE_RATE`, `KING_VERSION`, `KING_COMMIT` |
 | `src/cacerts.h` | Embedded root CA certificates (PEM) |
 
 ### Key structs

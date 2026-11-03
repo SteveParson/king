@@ -19,7 +19,12 @@ int tls_init_ca(void) {
     mbedtls_x509_crt_init(&g_ca);
     int rc = mbedtls_x509_crt_parse(&g_ca, (const unsigned char *)CA_BUNDLE_PEM, CA_BUNDLE_PEM_LEN);
     if (rc != 0) {
-        log_error("CA cert parse failed: -0x%04x", -rc);
+        log_event ev = log_event_new("tls.ca_init");
+        ev.outcome = "error";
+        ev.error_type = "CaParseError";
+        ev.error_message = "mbedtls_x509_crt_parse failed";
+        ev.error_code = -rc;
+        log_emit(LOG_LEVEL_ERROR, &ev);
         return -1;
     }
     g_ca_ready = 1;
@@ -51,10 +56,6 @@ static int tcp_connect(const char *host, const char *port) {
     }
     freeaddrinfo(res);
     return fd;
-}
-
-static int entropy_func(void *data, unsigned char *output, size_t len) {
-    return mbedtls_entropy_func(data, output, len);
 }
 
 /* Custom BIO callbacks for mbedtls over a raw socket fd. */
@@ -90,8 +91,8 @@ int tls_connect(tls_conn *c, const char *host, const char *port) {
     mbedtls_ctr_drbg_init(&c->drbg);
     mbedtls_entropy_init(&c->entropy);
 
-    if (mbedtls_ctr_drbg_seed(&c->drbg, entropy_func, &c->entropy, (const unsigned char *)"king",
-                              4) != 0) {
+    if (mbedtls_ctr_drbg_seed(&c->drbg, mbedtls_entropy_func, &c->entropy,
+                              (const unsigned char *)"king", 4) != 0) {
         goto fail;
     }
 
@@ -115,7 +116,13 @@ int tls_connect(tls_conn *c, const char *host, const char *port) {
 
     int ret = mbedtls_ssl_handshake(&c->ssl);
     if (ret != 0) {
-        log_error("TLS handshake failed: -0x%04x", -ret);
+        log_event ev = log_event_new("tls.handshake");
+        ev.outcome = "error";
+        ev.host = host;
+        ev.error_type = "TlsHandshakeError";
+        ev.error_message = "mbedtls_ssl_handshake failed";
+        ev.error_code = -ret;
+        log_emit(LOG_LEVEL_ERROR, &ev);
         goto fail;
     }
 

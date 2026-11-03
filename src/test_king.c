@@ -3,10 +3,12 @@
  *   - json.c  (JSON key extraction)
  *   - str.c   (string utilities: contains_case, json_escape, url_encode,
  *              http_status_code)
+ *   - log.c   (wide-event JSON formatting)
  *
  * Build:  make test
  */
 #include "json.h"
+#include "log.h"
 #include "str.h"
 #include "test.h"
 
@@ -229,6 +231,43 @@ int main(void) {
     ASSERT(http_status_code(NULL) == -1);
     ASSERT(http_status_code("") == -1);
     ASSERT(http_status_code("HTTP/1.1 ") == 0);
+
+    /* ==================================================================
+     * log_format_event — wide-event / canonical JSON line
+     * ================================================================== */
+    {
+        char line[2048];
+        log_event ev = log_event_new("message.handle");
+        ev.outcome = "success";
+        ev.duration_ms = 42;
+        ev.request_id = "req_test";
+        ev.channel_id = "222";
+        ev.message_id = "111";
+        ev.matched_king = 1;
+        ev.reply_http_status = 200;
+        ev.reaction_http_status = 204;
+        ev.content_len = 10;
+        ASSERT(log_format_event(line, sizeof(line), &ev) > 0);
+        ASSERT(strstr(line, "\"event\":\"message.handle\"") != NULL);
+        ASSERT(strstr(line, "\"outcome\":\"success\"") != NULL);
+        ASSERT(strstr(line, "\"duration_ms\":42") != NULL);
+        ASSERT(strstr(line, "\"request_id\":\"req_test\"") != NULL);
+        ASSERT(strstr(line, "\"channel_id\":\"222\"") != NULL);
+        ASSERT(strstr(line, "\"matched_king\":true") != NULL);
+        ASSERT(strstr(line, "\"service\":\"king\"") != NULL);
+        ASSERT(strstr(line, "\"reply_http_status\":200") != NULL);
+        /* omitted fields stay out of the payload */
+        ASSERT(strstr(line, "error_type") == NULL);
+        ASSERT(strstr(line, "gateway_op") == NULL);
+
+        /* escaping */
+        log_event bad = log_event_new("test");
+        bad.error_message = "say \"hi\"\n";
+        ASSERT(log_format_event(line, sizeof(line), &bad) > 0);
+        ASSERT(strstr(line, "say \\\"hi\\\"\\n") != NULL);
+
+        ASSERT(log_format_event(line, sizeof(line), NULL) < 0);
+    }
 
     TEST_SUMMARY();
 }

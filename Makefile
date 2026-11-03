@@ -54,7 +54,7 @@ MBEDTLS_LIBS = $(MBEDTLS_LIB)/libmbedtls.a \
 
 # ── bot sources ──────────────────────────────────────────────────
 BIN  = king
-SRCS = src/king.c src/net.c src/ws.c src/json.c src/str.c
+SRCS = src/king.c src/net.c src/ws.c src/json.c src/str.c src/log.c
 OBJS = $(SRCS:.c=.o)
 
 # ── targets ──────────────────────────────────────────────────────
@@ -79,7 +79,7 @@ $(MBEDTLS_LIBS):
 
 # ── tests ────────────────────────────────────────────────────────
 TEST_BIN  = test_king
-TEST_SRCS = src/test_king.c src/json.c src/str.c
+TEST_SRCS = src/test_king.c src/json.c src/str.c src/log.c
 TEST_OBJS = $(TEST_SRCS:.c=.o)
 
 test: $(TEST_BIN)
@@ -89,7 +89,7 @@ $(TEST_BIN): $(TEST_OBJS)
 	$(CC) $(LDFLAGS) -o $@ $(TEST_OBJS)
 
 # ── lint ─────────────────────────────────────────────────────────
-LINT_SRCS = src/king.c src/net.c src/ws.c src/json.c src/str.c src/test_king.c
+LINT_SRCS = src/king.c src/net.c src/ws.c src/json.c src/str.c src/log.c src/test_king.c
 LINT_HDRS = src/json.h src/str.h src/net.h src/ws.h src/log.h src/test.h src/cacerts.h
 
 lint:
@@ -97,7 +97,7 @@ lint:
 	clang-tidy $(LINT_SRCS) -- -Isrc -I$(MBEDTLS_INC) -Wno-implicit-function-declaration
 
 clean:
-	rm -f $(BIN) $(TEST_BIN) $(OBJS) src/test_king.o *.com.dbg *.aarch64.elf
+	rm -f $(BIN) $(TEST_BIN) $(OBJS) src/test_king.o src/log.o *.com.dbg *.aarch64.elf
 	rm -rf .aarch64
 
 mbedclean:

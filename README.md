@@ -65,7 +65,14 @@ You need **Message Content Intent** enabled in the [Discord Developer Portal](ht
 | `DISCORD_TOKEN` | *(required)* | Bot token (no `Bot ` prefix) |
 | `DISCORD_REPLY` | *(disabled)* | Reply text, omit to disable |
 | `DISCORD_REACTION` | `👑` | Reaction emoji |
-| `LOG_LEVEL` | `info` | `error`, `info`, or `debug` |
+| `LOG_LEVEL` | `info` | `error` or `info` (structured NDJSON on stderr) |
+| `LOG_SAMPLE_RATE` | `1.0` | Tail-sample rate for non-error / non-match events (`0.0`–`1.0`) |
+| `KING_VERSION` | `0.1` | Included on every log event |
+| `KING_COMMIT` | *(empty)* | Optional deploy/commit id on every event |
+
+### Logging
+
+Logs follow [wide events / canonical log lines](https://www.loggingsucks.com): one JSON object per unit of work (session, hello, ready, matched message, failures) — not a step-by-step diary. Errors and `matched_king` events are always kept; other info events respect `LOG_SAMPLE_RATE`. Tokens are never logged.
 
 ## Test / lint
 

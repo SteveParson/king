@@ -1,84 +1,81 @@
-/* Header-only logging with runtime level and compile-time stripping. */
+/* Wide-event logger (canonical log lines).
+ *
+ * Lessons from https://www.loggingsucks.com :
+ *  - emit one context-rich JSON event per unit of work
+ *  - structured key/value fields (queryable), not diary strings
+ *  - high-cardinality IDs + business context on the event
+ *  - info + error levels only; tail-sample boring successes
+ *
+ * Never put secrets (DISCORD_TOKEN) into a log_event.
+ */
 #ifndef LOG_H
 #define LOG_H
 
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <limits.h>
+#include <stddef.h>
 
-enum { LOG_LEVEL_ERROR = 0, LOG_LEVEL_INFO = 1, LOG_LEVEL_DEBUG = 2 };
+enum { LOG_LEVEL_ERROR = 0, LOG_LEVEL_INFO = 1 };
 
 #ifndef LOG_LEVEL_COMPILE
-#define LOG_LEVEL_COMPILE LOG_LEVEL_DEBUG
+#define LOG_LEVEL_COMPILE LOG_LEVEL_INFO
 #endif
 
-static int g_log_level = LOG_LEVEL_INFO;
+/* Omitted numeric fields use these sentinels (see log_event_new). */
+#define LOG_OMIT_I (-1)
+#define LOG_OMIT_LL LLONG_MIN
+#define LOG_OMIT_ERR INT_MIN
 
-static inline void log_init_from_env(void) {
-    const char *lvl = getenv("LOG_LEVEL");
-    if (!lvl || !*lvl) {
-        return;
-    }
-    if (strcmp(lvl, "error") == 0) {
-        g_log_level = LOG_LEVEL_ERROR;
-    } else if (strcmp(lvl, "debug") == 0) {
-        g_log_level = LOG_LEVEL_DEBUG;
-    }
-}
+typedef struct log_event {
+    const char *event;   /* required: e.g. "message.handle" */
+    const char *outcome; /* success | error | ignored | reconnect */
 
-#if LOG_LEVEL_COMPILE >= LOG_LEVEL_ERROR
-__attribute__((format(printf, 1, 2))) static inline void log_error(const char *fmt, ...) {
-    if (g_log_level < LOG_LEVEL_ERROR) {
-        return;
-    }
-    va_list ap;
-    va_start(ap, fmt);
-    fprintf(stderr, "[ERROR] ");
-    vfprintf(stderr, fmt, ap);
-    fputc('\n', stderr);
-    va_end(ap);
-}
-#else
-#define log_error(...)                                                                             \
-    do {                                                                                           \
-    } while (0)
-#endif
+    long long duration_ms;
 
-#if LOG_LEVEL_COMPILE >= LOG_LEVEL_INFO
-__attribute__((format(printf, 1, 2))) static inline void log_info(const char *fmt, ...) {
-    if (g_log_level < LOG_LEVEL_INFO) {
-        return;
-    }
-    va_list ap;
-    va_start(ap, fmt);
-    fprintf(stderr, "[INFO] ");
-    vfprintf(stderr, fmt, ap);
-    fputc('\n', stderr);
-    va_end(ap);
-}
-#else
-#define log_info(...)                                                                              \
-    do {                                                                                           \
-    } while (0)
-#endif
+    /* High-cardinality Discord / correlation IDs */
+    const char *request_id;
+    const char *channel_id;
+    const char *message_id;
 
-#if LOG_LEVEL_COMPILE >= LOG_LEVEL_DEBUG
-__attribute__((format(printf, 1, 2))) static inline void log_debug(const char *fmt, ...) {
-    if (g_log_level < LOG_LEVEL_DEBUG) {
-        return;
-    }
-    va_list ap;
-    va_start(ap, fmt);
-    fprintf(stderr, "[DEBUG] ");
-    vfprintf(stderr, fmt, ap);
-    fputc('\n', stderr);
-    va_end(ap);
-}
-#else
-#define log_debug(...)                                                                             \
-    do {                                                                                           \
-    } while (0)
-#endif
+    /* Gateway context */
+    long long gateway_op;
+    long long sequence;
+    const char *gateway_t;
+    long long heartbeat_interval_ms;
+
+    /* Business context for the king bot */
+    int matched_king; /* 0/1, or LOG_OMIT_I */
+    int reply_enabled;
+    int reply_http_status;
+    int reaction_http_status;
+    int content_len;
+    int heartbeats_ok;
+    int heartbeats_fail;
+
+    /* Errors / retries */
+    const char *error_type;
+    const char *error_message;
+    int error_code;
+    int attempt;
+    int max_attempts;
+
+    /* Optional HTTP / peer context */
+    const char *http_method;
+    const char *http_path;
+    int http_status;
+    const char *host;
+} log_event;
+
+/* Zero + omit-sentinels; sets .event. */
+log_event log_event_new(const char *event);
+
+void log_init_from_env(void);
+
+/* Format one NDJSON object into buf (NUL-terminated). Returns bytes written
+ * (excluding NUL), or -1 if truncated/invalid. Pure — used by tests. */
+int log_format_event(char *buf, size_t cap, const log_event *ev);
+
+/* Emit to stderr if level/sampling allows. Always keeps errors and
+ * matched_king==1. Other info events subject to LOG_SAMPLE_RATE. */
+void log_emit(int level, const log_event *ev);
 
 #endif /* LOG_H */
