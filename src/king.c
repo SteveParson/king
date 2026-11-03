@@ -46,6 +46,11 @@ static long long now_ms(void) {
     return ((long long)ts.tv_sec * 1000LL) + (ts.tv_nsec / 1000000LL);
 }
 
+static void make_request_id(char *out, size_t cap) {
+    static unsigned counter;
+    snprintf(out, cap, "req_%08lx%04x", (unsigned long)time(NULL), (++counter) & 0xffff);
+}
+
 /* ── REST API helpers ─────────────────────────────────────────── */
 
 static int api_request(const char *auth, const char *method, const char *path, const char *body,
@@ -68,7 +73,8 @@ static int api_request(const char *auth, const char *method, const char *path, c
     return https_request(API_HOST, API_PORT, req, resp, resp_cap);
 }
 
-static void send_message(const char *auth, const char *channel_id, const char *content) {
+/* Returns HTTP status, or -1 on transport failure. */
+static int send_message(const char *auth, const char *channel_id, const char *content) {
     char esc[2048];
     char body[4096];
     char path[256];
@@ -79,21 +85,16 @@ static void send_message(const char *auth, const char *channel_id, const char *c
     snprintf(path, sizeof(path), "/api/v10/channels/%s/messages", channel_id);
 
     if (api_request(auth, "POST", path, body, resp, sizeof(resp)) != 0) {
-        log_error("Failed to send message");
-        return;
+        return -1;
     }
-
-    int status = http_status_code(resp);
-    log_info("Message send status %d", status);
-    if (status >= 400) {
-        log_error("Message send failed: %.*s", 200, resp);
-    }
+    return http_status_code(resp);
 }
 
-static void send_reaction(const char *auth, const char *channel_id, const char *message_id,
-                          const char *emoji) {
+/* Returns HTTP status, -1 on transport failure, LOG_OMIT_I if emoji disabled. */
+static int send_reaction(const char *auth, const char *channel_id, const char *message_id,
+                         const char *emoji) {
     if (!emoji || !*emoji) {
-        return;
+        return LOG_OMIT_I;
     }
 
     char enc[256];
@@ -105,10 +106,9 @@ static void send_reaction(const char *auth, const char *channel_id, const char *
              message_id, enc);
 
     if (api_request(auth, "PUT", path, "", resp, sizeof(resp)) != 0) {
-        log_error("Failed to add reaction");
-        return;
+        return -1;
     }
-    log_info("Reaction add status %d", http_status_code(resp));
+    return http_status_code(resp);
 }
 
 /* ── Gateway operations ───────────────────────────────────────── */
@@ -118,6 +118,9 @@ typedef struct {
     long long heartbeat_interval;
     long long sequence;
     long long next_heartbeat;
+    long long session_start_ms;
+    unsigned heartbeats_ok;
+    unsigned heartbeats_fail;
 } gateway_state;
 
 /* Split DISCORD_TOKEN into REST Authorization header and raw gateway token. */
@@ -169,38 +172,62 @@ static int heartbeat_with_retry(gateway_state *s) {
 
     for (int attempt = 0; attempt < HB_MAX_RETRIES; attempt++) {
         if (send_heartbeat(&s->conn, s->sequence) == 0) {
-            log_debug("Heartbeat sent");
+            s->heartbeats_ok++;
             s->next_heartbeat = now_ms() + s->heartbeat_interval;
             return 0;
         }
+        s->heartbeats_fail++;
         if (attempt + 1 < HB_MAX_RETRIES) {
-            log_error("Heartbeat failed, retrying...");
             usleep(delay);
             delay *= 2;
         }
     }
-    log_error("Heartbeat failed");
+
+    log_event ev = log_event_new("gateway.heartbeat");
+    ev.outcome = "error";
+    ev.sequence = s->sequence;
+    ev.heartbeat_interval_ms = s->heartbeat_interval;
+    ev.attempt = HB_MAX_RETRIES;
+    ev.max_attempts = HB_MAX_RETRIES;
+    ev.error_type = "HeartbeatError";
+    ev.error_message = "heartbeat failed after retries";
+    log_emit(LOG_LEVEL_ERROR, &ev);
     return -1;
 }
 
 static int handle_hello(gateway_state *s, const char *token, const char *payload) {
     long long interval = 0;
     json_object_key hb_key = {"d", "heartbeat_interval"};
+    long long t0 = now_ms();
 
     if (json_get_int_in_object(payload, &hb_key, &interval)) {
         s->heartbeat_interval = interval;
     }
     if (send_identify(&s->conn, token) != 0) {
-        log_error("Identify failed");
+        log_event ev = log_event_new("gateway.identify");
+        ev.outcome = "error";
+        ev.duration_ms = now_ms() - t0;
+        ev.gateway_op = OP_HELLO;
+        ev.heartbeat_interval_ms = s->heartbeat_interval;
+        ev.error_type = "IdentifyError";
+        ev.error_message = "ws send identify failed";
+        log_emit(LOG_LEVEL_ERROR, &ev);
         return -1;
     }
-    log_info("Identify sent");
+
     s->next_heartbeat = now_ms() + s->heartbeat_interval;
+
+    log_event ev = log_event_new("gateway.hello");
+    ev.outcome = "success";
+    ev.duration_ms = now_ms() - t0;
+    ev.gateway_op = OP_HELLO;
+    ev.heartbeat_interval_ms = s->heartbeat_interval;
+    log_emit(LOG_LEVEL_INFO, &ev);
     return 0;
 }
 
-static void handle_message_create(const char *auth, const char *reply, const char *reaction,
-                                  const char *payload) {
+static void handle_message_create(gateway_state *s, const char *auth, const char *reply,
+                                  const char *reaction, const char *payload) {
     if (strstr(payload, "\"bot\":true")) {
         return;
     }
@@ -208,6 +235,7 @@ static void handle_message_create(const char *auth, const char *reply, const cha
     char content[2048];
     char channel_id[64];
     char message_id[64];
+    char request_id[32];
     json_object_key content_key = {"d", "content"};
     json_object_key channel_key = {"d", "channel_id"};
     json_object_key id_key = {"d", "id"};
@@ -218,17 +246,44 @@ static void handle_message_create(const char *auth, const char *reply, const cha
         return;
     }
 
-    if (!contains_case(content, "king")) {
-        log_debug("Message ignored");
+    long long t0 = now_ms();
+    make_request_id(request_id, sizeof(request_id));
+
+    log_event ev = log_event_new("message.handle");
+    ev.request_id = request_id;
+    ev.channel_id = channel_id;
+    ev.message_id = message_id;
+    ev.sequence = s->sequence;
+    ev.gateway_t = "MESSAGE_CREATE";
+    ev.content_len = (int)strlen(content);
+    ev.reply_enabled = (reply && *reply) ? 1 : 0;
+    ev.matched_king = contains_case(content, "king") ? 1 : 0;
+
+    if (!ev.matched_king) {
+        /* Not a unit of business work — skip (avoid diary noise). */
         return;
     }
 
-    log_info("Matched 'king' in channel %s", channel_id);
     if (reply && *reply) {
-        send_message(auth, channel_id, reply);
+        ev.reply_http_status = send_message(auth, channel_id, reply);
     }
     if (reaction && *reaction) {
-        send_reaction(auth, channel_id, message_id, reaction);
+        ev.reaction_http_status = send_reaction(auth, channel_id, message_id, reaction);
+    }
+
+    ev.duration_ms = now_ms() - t0;
+    int reply_bad = (ev.reply_http_status != LOG_OMIT_I) &&
+                    (ev.reply_http_status < 0 || ev.reply_http_status >= 400);
+    int reaction_bad = (ev.reaction_http_status != LOG_OMIT_I) &&
+                       (ev.reaction_http_status < 0 || ev.reaction_http_status >= 400);
+    if (reply_bad || reaction_bad) {
+        ev.outcome = "error";
+        ev.error_type = "DiscordRestError";
+        ev.error_message = reply_bad ? "reply failed" : "reaction failed";
+        log_emit(LOG_LEVEL_ERROR, &ev);
+    } else {
+        ev.outcome = "success";
+        log_emit(LOG_LEVEL_INFO, &ev);
     }
 }
 
@@ -256,7 +311,11 @@ static int poll_and_read(gateway_state *s, char *buf, size_t buf_cap) {
 
     int rc = poll(&pfd, 1, timeout);
     if (rc < 0) {
-        log_error("poll failed");
+        log_event ev = log_event_new("gateway.poll");
+        ev.outcome = "error";
+        ev.error_type = "PollError";
+        ev.error_message = "poll failed";
+        log_emit(LOG_LEVEL_ERROR, &ev);
         return -1;
     }
 
@@ -273,7 +332,12 @@ static int poll_and_read(gateway_state *s, char *buf, size_t buf_cap) {
 
     size_t len = 0;
     if (ws_read_text(&s->conn, buf, buf_cap, &len) != 0) {
-        log_error("Gateway read failed");
+        log_event ev = log_event_new("gateway.read");
+        ev.outcome = "error";
+        ev.sequence = s->sequence;
+        ev.error_type = "GatewayReadError";
+        ev.error_message = "ws read failed";
+        log_emit(LOG_LEVEL_ERROR, &ev);
         return -1;
     }
     return 0;
@@ -285,11 +349,16 @@ static int handle_gateway_payload(gateway_state *s, const char *auth, const char
     long long op = -1;
     if (json_get_int(buf, "op", &op)) {
         if (op == OP_HEARTBEAT_ACK) {
-            log_debug("Heartbeat ACK");
-            return 0;
+            return 0; /* counted via successful heartbeat send */
         }
         if (op == OP_RECONNECT || op == OP_INVALID_SESSION) {
-            log_error("Reconnect requested");
+            log_event ev = log_event_new("gateway.reconnect");
+            ev.outcome = "reconnect";
+            ev.gateway_op = op;
+            ev.sequence = s->sequence;
+            ev.duration_ms = now_ms() - s->session_start_ms;
+            ev.error_type = (op == OP_RECONNECT) ? "Reconnect" : "InvalidSession";
+            log_emit(LOG_LEVEL_ERROR, &ev);
             return -1;
         }
     }
@@ -304,11 +373,31 @@ static int handle_gateway_payload(gateway_state *s, const char *auth, const char
         return 0;
     }
     if (strcmp(event, "MESSAGE_CREATE") == 0) {
-        handle_message_create(auth, reply, reaction, buf);
+        handle_message_create(s, auth, reply, reaction, buf);
     } else if (strcmp(event, "READY") == 0) {
-        log_info("READY event received");
+        log_event ev = log_event_new("gateway.ready");
+        ev.outcome = "success";
+        ev.gateway_t = "READY";
+        ev.sequence = s->sequence;
+        ev.heartbeat_interval_ms = s->heartbeat_interval;
+        ev.duration_ms = now_ms() - s->session_start_ms;
+        log_emit(LOG_LEVEL_INFO, &ev);
     }
     return 0;
+}
+
+static void emit_session_end(gateway_state *s, const char *outcome, const char *error_type,
+                             const char *error_message) {
+    log_event ev = log_event_new("session.end");
+    ev.outcome = outcome;
+    ev.duration_ms = now_ms() - s->session_start_ms;
+    ev.sequence = s->sequence;
+    ev.heartbeat_interval_ms = s->heartbeat_interval;
+    ev.heartbeats_ok = (int)s->heartbeats_ok;
+    ev.heartbeats_fail = (int)s->heartbeats_fail;
+    ev.error_type = error_type;
+    ev.error_message = error_message;
+    log_emit(outcome && strcmp(outcome, "error") == 0 ? LOG_LEVEL_ERROR : LOG_LEVEL_INFO, &ev);
 }
 
 /* ── Main ─────────────────────────────────────────────────────── */
@@ -321,7 +410,11 @@ int main(void) {
     const char *reaction = getenv("DISCORD_REACTION");
 
     if (!token || !*token) {
-        fprintf(stderr, "DISCORD_TOKEN is required\n");
+        log_event ev = log_event_new("session.start");
+        ev.outcome = "error";
+        ev.error_type = "ConfigError";
+        ev.error_message = "DISCORD_TOKEN is required";
+        log_emit(LOG_LEVEL_ERROR, &ev);
         return 1;
     }
     if (!reaction) {
@@ -332,41 +425,74 @@ int main(void) {
     char gateway_token[512];
     normalize_token(token, auth, sizeof(auth), gateway_token, sizeof(gateway_token));
 
+    gateway_state state = {
+        .heartbeat_interval = 45000,
+        .sequence = -1,
+        .next_heartbeat = 0,
+        .session_start_ms = now_ms(),
+    };
+
     if (tls_init_ca() != 0) {
-        fprintf(stderr, "Failed to init CA certificates\n");
+        log_event ev = log_event_new("session.start");
+        ev.outcome = "error";
+        ev.error_type = "TlsCaError";
+        ev.error_message = "CA certificate init failed";
+        log_emit(LOG_LEVEL_ERROR, &ev);
         return 1;
     }
 
-    gateway_state state = {.heartbeat_interval = 45000, .sequence = -1, .next_heartbeat = 0};
-
+    long long t_connect = now_ms();
     if (tls_connect(&state.conn, GATEWAY_HOST, API_PORT) != 0) {
-        log_error("Gateway TLS connect failed");
+        log_event ev = log_event_new("session.start");
+        ev.outcome = "error";
+        ev.duration_ms = now_ms() - t_connect;
+        ev.host = GATEWAY_HOST;
+        ev.error_type = "TlsConnectError";
+        ev.error_message = "gateway TLS connect failed";
+        log_emit(LOG_LEVEL_ERROR, &ev);
         return 1;
     }
-    log_info("Connected to gateway TLS");
 
     if (ws_handshake(&state.conn, GATEWAY_HOST, GATEWAY_PATH) != 0) {
-        log_error("WebSocket handshake failed");
+        log_event ev = log_event_new("session.start");
+        ev.outcome = "error";
+        ev.duration_ms = now_ms() - t_connect;
+        ev.host = GATEWAY_HOST;
+        ev.error_type = "WsHandshakeError";
+        ev.error_message = "websocket handshake failed";
+        log_emit(LOG_LEVEL_ERROR, &ev);
         tls_close(&state.conn);
         return 1;
     }
-    log_info("WebSocket handshake complete");
 
     char buf[BUF_SIZE];
     if (wait_for_hello(&state, gateway_token, buf, sizeof(buf)) != 0) {
+        emit_session_end(&state, "error", "HelloError", "did not receive HELLO/identify");
         tls_close(&state.conn);
         return 1;
+    }
+
+    {
+        log_event ev = log_event_new("session.start");
+        ev.outcome = "success";
+        ev.duration_ms = now_ms() - state.session_start_ms;
+        ev.host = GATEWAY_HOST;
+        ev.heartbeat_interval_ms = state.heartbeat_interval;
+        log_emit(LOG_LEVEL_INFO, &ev);
     }
 
     while (1) {
         int rc = poll_and_read(&state, buf, sizeof(buf));
         if (rc < 0) {
+            emit_session_end(&state, "error", "GatewayLoopError", "poll/read/heartbeat failed");
             break;
         }
         if (rc > 0) {
             continue; /* idle / heartbeat-only tick */
         }
         if (handle_gateway_payload(&state, auth, reply, reaction, buf) != 0) {
+            /* reconnect event already emitted */
+            emit_session_end(&state, "reconnect", NULL, NULL);
             break;
         }
     }
