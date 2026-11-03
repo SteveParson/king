@@ -10,6 +10,28 @@ static const char *skip_ws(const char *p) {
     return p;
 }
 
+/* Parse a JSON number at *pp into *out. Advances nothing; returns 0 on failure. */
+static int parse_int_value(const char *p, long long *out) {
+    if (!p) {
+        return 0;
+    }
+    int neg = 0;
+    if (*p == '-') {
+        neg = 1;
+        p++;
+    }
+    if (!isdigit((unsigned char)*p)) {
+        return 0;
+    }
+    long long v = 0;
+    while (isdigit((unsigned char)*p)) {
+        v = (v * 10) + (*p - '0');
+        p++;
+    }
+    *out = neg ? -v : v;
+    return 1;
+}
+
 static int read_string_value(const char *c, char *out, size_t cap) {
     if (!c || *c != '"') {
         return 0;
@@ -92,25 +114,7 @@ int json_get_string(const char *json, const char *key, char *out, size_t cap) {
 }
 
 int json_get_int(const char *json, const char *key, long long *out) {
-    const char *p = json_find_key(json, key);
-    if (!p) {
-        return 0;
-    }
-    int neg = 0;
-    if (*p == '-') {
-        neg = 1;
-        p++;
-    }
-    if (!isdigit((unsigned char)*p)) {
-        return 0;
-    }
-    long long v = 0;
-    while (isdigit((unsigned char)*p)) {
-        v = (v * 10) + (*p - '0');
-        p++;
-    }
-    *out = neg ? -v : v;
-    return 1;
+    return parse_int_value(json_find_key(json, key), out);
 }
 
 /* Find the byte range of a JSON object value. */
@@ -174,6 +178,7 @@ static const char *find_string_end(const char *s, const char *end) {
     return NULL;
 }
 
+/* Scan for `key` at object depth 1 within [start, end); set *val to its value. */
 static int scan_key(const char *start, const char *end, const char *key, const char **val) {
     size_t klen = strlen(key);
     int depth = 0;
@@ -206,45 +211,24 @@ static int scan_key(const char *start, const char *end, const char *key, const c
     return 0;
 }
 
-int json_get_string_in_object(const char *json, const json_object_key *key, char *out, size_t cap) {
+/* Resolve object_key.member_key to a value pointer inside json. */
+static const char *value_in_object(const char *json, const json_object_key *key) {
     const char *start;
     const char *end;
     const char *val = NULL;
     if (!find_object_range(json, key->object_key, &start, &end)) {
-        return 0;
+        return NULL;
     }
     if (!scan_key(start, end, key->member_key, &val)) {
-        return 0;
+        return NULL;
     }
-    return read_string_value(val, out, cap);
+    return val;
+}
+
+int json_get_string_in_object(const char *json, const json_object_key *key, char *out, size_t cap) {
+    return read_string_value(value_in_object(json, key), out, cap);
 }
 
 int json_get_int_in_object(const char *json, const json_object_key *key, long long *out) {
-    const char *start;
-    const char *end;
-    const char *val = NULL;
-    if (!find_object_range(json, key->object_key, &start, &end)) {
-        return 0;
-    }
-    if (!scan_key(start, end, key->member_key, &val)) {
-        return 0;
-    }
-    if (!val) {
-        return 0;
-    }
-    int neg = 0;
-    if (*val == '-') {
-        neg = 1;
-        val++;
-    }
-    if (!isdigit((unsigned char)*val)) {
-        return 0;
-    }
-    long long v = 0;
-    while (isdigit((unsigned char)*val)) {
-        v = (v * 10) + (*val - '0');
-        val++;
-    }
-    *out = neg ? -v : v;
-    return 1;
+    return parse_int_value(value_in_object(json, key), out);
 }

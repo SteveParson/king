@@ -8,14 +8,13 @@
 #include <mbedtls/x509_crt.h>
 #include <stddef.h>
 
-/* Opaque TLS connection handle. */
+/* Live TLS session over a TCP socket (mbedtls state owned here). */
 typedef struct {
     int fd;
     mbedtls_ssl_context ssl;
     mbedtls_ssl_config conf;
     mbedtls_ctr_drbg_context drbg;
     mbedtls_entropy_context entropy;
-    mbedtls_x509_crt ca;
 } tls_conn;
 
 /* Initialize the global CA certificate store. Call once at startup. */

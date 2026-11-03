@@ -6,6 +6,12 @@
 #include <string.h>
 #include <sys/random.h>
 
+enum {
+    WS_OPCODE_TEXT = 0x1,
+    WS_OPCODE_CLOSE = 0x8,
+    WS_FIN_TEXT = 0x81, /* FIN bit + text opcode */
+};
+
 static int random_bytes(unsigned char *buf, size_t len) {
     return (getrandom(buf, len, 0) == (ssize_t)len) ? 0 : -1;
 }
@@ -67,7 +73,7 @@ int ws_handshake(tls_conn *c, const char *host, const char *path) {
 int ws_send_text(tls_conn *c, const char *text, size_t len) {
     unsigned char header[14];
     size_t hlen = 0;
-    header[0] = 0x81; /* FIN + text opcode */
+    header[0] = WS_FIN_TEXT;
 
     if (len <= 125) {
         header[1] = 0x80 | (unsigned char)len;
@@ -106,6 +112,19 @@ int ws_send_text(tls_conn *c, const char *text, size_t len) {
     return rc;
 }
 
+/* Discard `plen` bytes from the TLS stream (oversized / unwanted payload). */
+static int drain_payload(tls_conn *c, size_t plen) {
+    unsigned char tmp[512];
+    while (plen > 0) {
+        size_t chunk = plen > sizeof(tmp) ? sizeof(tmp) : plen;
+        if (tls_read_exact(c, tmp, chunk) != 0) {
+            return -1;
+        }
+        plen -= chunk;
+    }
+    return 0;
+}
+
 int ws_read_text(tls_conn *c, char *out, size_t out_cap, size_t *out_len) {
     unsigned char hdr[2];
     if (tls_read_exact(c, hdr, 2) != 0) {
@@ -139,16 +158,7 @@ int ws_read_text(tls_conn *c, char *out, size_t out_cap, size_t *out_len) {
     }
 
     if (plen + 1 > out_cap) {
-        /* Drain oversized payload */
-        unsigned char tmp[512];
-        size_t rem = (size_t)plen;
-        while (rem > 0) {
-            size_t chunk = rem > sizeof(tmp) ? sizeof(tmp) : rem;
-            if (tls_read_exact(c, tmp, chunk) != 0) {
-                return -1;
-            }
-            rem -= chunk;
-        }
+        (void)drain_payload(c, (size_t)plen);
         return -1;
     }
 
@@ -166,12 +176,7 @@ int ws_read_text(tls_conn *c, char *out, size_t out_cap, size_t *out_len) {
         *out_len = (size_t)plen;
     }
 
-    /* Close frame */
-    if (opcode == 0x8) {
-        return -1;
-    }
-    /* Only accept text frames */
-    if (opcode != 0x1) {
+    if (opcode == WS_OPCODE_CLOSE || opcode != WS_OPCODE_TEXT) {
         return -1;
     }
     return 0;

@@ -53,10 +53,6 @@ static int tcp_connect(const char *host, const char *port) {
     return fd;
 }
 
-static int entropy_func(void *data, unsigned char *output, size_t len) {
-    return mbedtls_entropy_func(data, output, len);
-}
-
 /* Custom BIO callbacks for mbedtls over a raw socket fd. */
 static int bio_send(void *ctx, const unsigned char *buf, size_t len) {
     int fd = *(int *)ctx;
@@ -90,8 +86,8 @@ int tls_connect(tls_conn *c, const char *host, const char *port) {
     mbedtls_ctr_drbg_init(&c->drbg);
     mbedtls_entropy_init(&c->entropy);
 
-    if (mbedtls_ctr_drbg_seed(&c->drbg, entropy_func, &c->entropy, (const unsigned char *)"king",
-                              4) != 0) {
+    if (mbedtls_ctr_drbg_seed(&c->drbg, mbedtls_entropy_func, &c->entropy,
+                              (const unsigned char *)"king", 4) != 0) {
         goto fail;
     }
 
