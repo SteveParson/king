@@ -1,0 +1,43 @@
+# Docker-first workflows for king. Requires Docker only on the host.
+# Submodules must be initialized: `git submodule update --init`
+#
+#   docker compose build test     # compile + run unit tests
+#   docker compose build lint     # clang-format + clang-tidy
+#   docker compose build king     # runtime scratch image
+#   docker compose run --rm king  # run bot (needs .env)
+
+services:
+  test:
+    build:
+      context: .
+      target: test
+    image: king:test
+    profiles: ["build"]
+
+  lint:
+    build:
+      context: .
+      target: lint
+    image: king:lint
+    profiles: ["build"]
+
+  builder:
+    build:
+      context: .
+      target: builder
+    image: king:builder
+    profiles: ["build"]
+
+  king:
+    build:
+      context: .
+      target: runtime
+    image: king:local
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DISCORD_TOKEN: ${DISCORD_TOKEN:-}
+      DISCORD_REPLY: ${DISCORD_REPLY:-}
+      DISCORD_REACTION: ${DISCORD_REACTION:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}

@@ -4,18 +4,27 @@ This file provides guidance to AI coding agents when working with code in this r
 
 ## Build
 
+Prefer Docker so the host only needs Docker (no local cosmocc / LLVM):
+
 ```bash
-make
+git submodule update --init   # vendor/mbedtls required in the build context
+make docker-test              # compile + unit tests in Docker
+make docker-king              # extract ./king APE via Docker
+make docker-lint              # clang-format + clang-tidy (LLVM 21) in Docker
+make docker-image             # scratch runtime image tagged king:local
 ```
 
-The Makefile auto-downloads `cosmocc` (Cosmopolitan C compiler) on first run and builds mbedtls from the vendored submodule. The output is `king`, an Actually Portable Executable.
+Native (downloads cosmocc onto the host):
 
 ```bash
+make
 make test       # build and run tests
 make clean      # remove build artifacts
 make mbedclean  # also clean mbedtls
 make distclean  # also remove downloaded cosmocc
 ```
+
+The Makefile auto-downloads `cosmocc` for native builds and builds mbedtls from the vendored submodule. The output is `king`, an Actually Portable Executable. Dockerfile stages: `builder`, `test`, `lint`, `runtime`.
 
 ## Run
 
